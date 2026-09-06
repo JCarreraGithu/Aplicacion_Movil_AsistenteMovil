@@ -1,0 +1,272 @@
+SET search_path TO SISTEMA_RIEGO, public;
+
+-- ============================================
+-- 1. USUARIO
+-- ============================================
+CREATE TABLE usuario (
+    id_usuario SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    apellido VARCHAR(100) NOT NULL,
+    correo VARCHAR(150) NOT NULL UNIQUE,
+    contrasena VARCHAR(255) NOT NULL,
+    telefono VARCHAR(20),
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================
+-- 2. JARDIN
+-- ============================================
+CREATE TABLE jardin (
+    id_jardin SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL,
+    nombre VARCHAR(100) NOT NULL,
+    ubicacion VARCHAR(255),
+    descripcion TEXT,
+
+    CONSTRAINT fk_jardin_usuario
+        FOREIGN KEY (id_usuario)
+        REFERENCES usuario(id_usuario)
+        ON DELETE CASCADE
+);
+
+-- ============================================
+-- 3. SECTOR
+-- ============================================
+CREATE TABLE sector (
+    id_sector SERIAL PRIMARY KEY,
+    id_jardin INTEGER NOT NULL,
+    nombre VARCHAR(100) NOT NULL,
+    descripcion TEXT,
+
+    CONSTRAINT fk_sector_jardin
+        FOREIGN KEY (id_jardin)
+        REFERENCES jardin(id_jardin)
+        ON DELETE CASCADE
+);
+
+-- ============================================
+-- 4. ESPECIE_PLANTA
+-- ============================================
+CREATE TABLE especie_planta (
+    id_especie SERIAL PRIMARY KEY,
+    nombre_comun VARCHAR(100) NOT NULL,
+    nombre_cientifico VARCHAR(150),
+    frecuencia_riego INTEGER,
+    descripcion TEXT
+);
+
+-- ============================================
+-- 5. PLANTA
+-- ============================================
+CREATE TABLE planta (
+    id_planta SERIAL PRIMARY KEY,
+    id_sector INTEGER NOT NULL,
+    id_especie INTEGER,
+    nombre VARCHAR(100) NOT NULL,
+    fecha_registro DATE DEFAULT CURRENT_DATE,
+    descripcion TEXT,
+
+    CONSTRAINT fk_planta_sector
+        FOREIGN KEY (id_sector)
+        REFERENCES sector(id_sector)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_planta_especie
+        FOREIGN KEY (id_especie)
+        REFERENCES especie_planta(id_especie)
+        ON DELETE SET NULL
+);
+
+-- ============================================
+-- 6. HISTORIAL_PLANTA
+-- ============================================
+CREATE TABLE historial_planta (
+    id_historial SERIAL PRIMARY KEY,
+    id_planta INTEGER NOT NULL,
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    observacion TEXT,
+    estado VARCHAR(50),
+
+    CONSTRAINT fk_historial_planta
+        FOREIGN KEY (id_planta)
+        REFERENCES planta(id_planta)
+        ON DELETE CASCADE
+);
+
+-- ============================================
+-- 7. TIPO_SENSOR
+-- ============================================
+CREATE TABLE tipo_sensor (
+    id_tipo_sensor SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    descripcion TEXT
+);
+
+-- ============================================
+-- 8. SENSOR
+-- ============================================
+CREATE TABLE sensor (
+    id_sensor SERIAL PRIMARY KEY,
+    id_sector INTEGER NOT NULL,
+    id_tipo_sensor INTEGER NOT NULL,
+    codigo VARCHAR(50) NOT NULL UNIQUE,
+    estado VARCHAR(30) DEFAULT 'ACTIVO',
+    fecha_instalacion DATE DEFAULT CURRENT_DATE,
+
+    CONSTRAINT fk_sensor_sector
+        FOREIGN KEY (id_sector)
+        REFERENCES sector(id_sector)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_sensor_tipo
+        FOREIGN KEY (id_tipo_sensor)
+        REFERENCES tipo_sensor(id_tipo_sensor)
+);
+
+-- ============================================
+-- 9. TIPO_ACTUADOR
+-- ============================================
+CREATE TABLE tipo_actuador (
+    id_tipo_actuador SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    descripcion TEXT
+);
+
+-- ============================================
+-- 10. ACTUADOR
+-- ============================================
+CREATE TABLE actuador (
+    id_actuador SERIAL PRIMARY KEY,
+    id_sector INTEGER NOT NULL,
+    id_tipo_actuador INTEGER NOT NULL,
+    codigo VARCHAR(50) NOT NULL UNIQUE,
+    estado VARCHAR(30) DEFAULT 'ACTIVO',
+
+    CONSTRAINT fk_actuador_sector
+        FOREIGN KEY (id_sector)
+        REFERENCES sector(id_sector)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_actuador_tipo
+        FOREIGN KEY (id_tipo_actuador)
+        REFERENCES tipo_actuador(id_tipo_actuador)
+);
+
+-- ============================================
+-- 11. LECTURA_SENSOR
+-- ============================================
+CREATE TABLE lectura_sensor (
+    id_lectura SERIAL PRIMARY KEY,
+    id_sensor INTEGER NOT NULL,
+    valor DECIMAL(10,2) NOT NULL,
+    unidad VARCHAR(20),
+    fecha_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_lectura_sensor
+        FOREIGN KEY (id_sensor)
+        REFERENCES sensor(id_sensor)
+        ON DELETE CASCADE
+);
+
+-- ============================================
+-- 12. RIEGO
+-- ============================================
+CREATE TABLE riego (
+    id_riego SERIAL PRIMARY KEY,
+    id_sector INTEGER NOT NULL,
+    fecha_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    duracion_segundos INTEGER,
+    cantidad_agua DECIMAL(10,2),
+    modo VARCHAR(20),
+
+    CONSTRAINT fk_riego_sector
+        FOREIGN KEY (id_sector)
+        REFERENCES sector(id_sector)
+        ON DELETE CASCADE
+);
+
+-- ============================================
+-- 13. CONFIGURACION_RIEGO
+-- ============================================
+CREATE TABLE configuracion_riego (
+    id_configuracion SERIAL PRIMARY KEY,
+    id_sector INTEGER NOT NULL,
+    humedad_minima DECIMAL(5,2),
+    humedad_maxima DECIMAL(5,2),
+    frecuencia_dias INTEGER,
+    horario TIME,
+    modo_automatico BOOLEAN DEFAULT TRUE,
+
+    CONSTRAINT fk_configuracion_sector
+        FOREIGN KEY (id_sector)
+        REFERENCES sector(id_sector)
+        ON DELETE CASCADE
+);
+
+-- ============================================
+-- 14. IDENTIFICACION_PLANTA
+-- ============================================
+CREATE TABLE identificacion_planta (
+    id_identificacion SERIAL PRIMARY KEY,
+    id_planta INTEGER,
+    nombre_identificado VARCHAR(150),
+    nombre_cientifico VARCHAR(150),
+    porcentaje_confianza DECIMAL(5,2),
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_identificacion_planta
+        FOREIGN KEY (id_planta)
+        REFERENCES planta(id_planta)
+        ON DELETE SET NULL
+);
+
+-- ============================================
+-- 15. CONSULTA_IA
+-- ============================================
+CREATE TABLE consulta_ia (
+    id_consulta SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL,
+    pregunta TEXT NOT NULL,
+    respuesta TEXT,
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_consulta_usuario
+        FOREIGN KEY (id_usuario)
+        REFERENCES usuario(id_usuario)
+        ON DELETE CASCADE
+);
+
+-- ============================================
+-- 16. NOTIFICACION
+-- ============================================
+CREATE TABLE notificacion (
+    id_notificacion SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL,
+    titulo VARCHAR(150) NOT NULL,
+    mensaje TEXT NOT NULL,
+    tipo VARCHAR(50),
+    leida BOOLEAN DEFAULT FALSE,
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_notificacion_usuario
+        FOREIGN KEY (id_usuario)
+        REFERENCES usuario(id_usuario)
+        ON DELETE CASCADE
+);
+
+-- ============================================
+-- 17. CLIMA
+-- ============================================
+CREATE TABLE clima (
+    id_clima SERIAL PRIMARY KEY,
+    id_sector INTEGER NOT NULL,
+    temperatura DECIMAL(5,2),
+    humedad_ambiente DECIMAL(5,2),
+    luminosidad DECIMAL(10,2),
+    fecha_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_clima_sector
+        FOREIGN KEY (id_sector)
+        REFERENCES sector(id_sector)
+        ON DELETE CASCADE
+);
