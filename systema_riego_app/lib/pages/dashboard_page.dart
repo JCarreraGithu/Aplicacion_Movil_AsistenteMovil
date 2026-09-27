@@ -1,545 +1,732 @@
 import 'package:flutter/material.dart';
 import '../widgets/metric_card.dart';
+import '../services/lectura_sensor_service.dart';
 import 'notificaciones_page.dart';
 import 'jardines_page.dart';
 import 'asistente_page.dart';
 import 'configuracion_page.dart';
 
 class DashboardPage extends StatefulWidget {
-  final String token;
+final String token;
 
-  const DashboardPage({
-    super.key,
-    required this.token,
-  });
+const DashboardPage({
+super.key,
+required this.token,
+});
 
-  @override
-  State<DashboardPage> createState() => _DashboardPageState();
+@override
+State<DashboardPage> createState() => _DashboardPageState();
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  int currentIndex = 0;
+int currentIndex = 0;
 
-  bool sistemaActivo = true;
-  bool riegoManual = false;
+bool sistemaActivo = true;
+bool riegoManual = false;
 
-  // ============================================================
-  // RIEGO MANUAL
-  // ============================================================
+// ============================================================
+// LECTURAS DEL SECTOR
+// ============================================================
 
-  void activarRiegoManual() {
-    setState(() {
-      riegoManual = !riegoManual;
-    });
+List<dynamic> lecturas = [];
+bool cargandoLecturas = true;
+String? errorLecturas;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          riegoManual
-              ? 'Riego manual activado'
-              : 'Riego manual desactivado',
-        ),
-      ),
-    );
-  }
+// Sector que estamos mostrando actualmente
+final int idSector = 1;
 
-  // ============================================================
-  // BUILD
-  // ============================================================
+// ============================================================
+// INIT
+// ============================================================
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F5),
+@override
+void initState() {
+super.initState();
+cargarLecturas();
+}
 
-      body: _buildCurrentPage(),
+// ============================================================
+// CARGAR LECTURAS DESDE EL BACKEND
+// ============================================================
 
-      // ========================================================
-      // NAVEGACIÓN INFERIOR
-      // ========================================================
+Future<void> cargarLecturas() async {
+if (!mounted) return;
 
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: currentIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            currentIndex = index;
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Inicio',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.eco_outlined),
-            selectedIcon: Icon(Icons.eco),
-            label: 'Jardines',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.smart_toy_outlined),
-            selectedIcon: Icon(Icons.smart_toy),
-            label: 'Asistente',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Config.',
-          ),
-        ],
-      ),
-    );
-  }
+setState(() {
+cargandoLecturas = true;
+errorLecturas = null;
+});
 
-  // ============================================================
-  // PÁGINA ACTUAL
-  // ============================================================
+try {
+final resultado =
+await LecturaSensorService.obtenerUltimasLecturasPorSector(
+token: widget.token,
+idSector: idSector,
+);
 
-  Widget _buildCurrentPage() {
-    switch (currentIndex) {
-      case 1:
-        return JardinesPage(
-          token: widget.token,
-        );
+if (!mounted) return;
 
+setState(() {
+lecturas = resultado;
+cargandoLecturas = false;
+});
+} catch (error) {
+if (!mounted) return;
 
-      case 2:
-        return AsistentePage(
-          token: widget.token,
-        );
+setState(() {
+cargandoLecturas = false;
+errorLecturas = error.toString();
+});
 
-      case 3:
-        return const ConfiguracionPage();
+print('ERROR CARGANDO LECTURAS: $error');
+}
+}
 
-      default:
-        return _buildDashboard();
-    }
-  }
+// ============================================================
+// OBTENER VALOR DE UN TIPO DE SENSOR
+// ============================================================
 
-  // ============================================================
-  // DASHBOARD
-  // ============================================================
+dynamic obtenerLectura(String tipoSensor) {
+for (final lectura in lecturas) {
+if (lectura['tipo_sensor'] == tipoSensor) {
+return lectura;
+}
+}
 
-  Widget _buildDashboard() {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(
-          20,
-          20,
-          20,
-          30,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ==================================================
-            // ENCABEZADO
-            // ==================================================
+return null;
+}
 
-            Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Buenos días,',
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    const Text(
-                      'Carlos 👋',
-                      style: TextStyle(
-                        fontSize: 25,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
+// ============================================================
+// FORMATEAR VALOR
+// ============================================================
 
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius:
-                        BorderRadius.circular(14),
-                  ),
-                  child: IconButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const NotificacionesPage(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(
-                      Icons.notifications_none,
-                      size: 27,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+String obtenerValor(
+String tipoSensor, {
+String valorDefecto = '--',
+}) {
+final lectura = obtenerLectura(tipoSensor);
 
-            const SizedBox(height: 25),
+if (lectura == null) {
+return valorDefecto;
+}
 
-            // ==================================================
-            // ESTADO DEL JARDÍN
-            // ==================================================
+final valor = lectura['valor'];
 
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2E7D32),
-                borderRadius:
-                    BorderRadius.circular(22),
-              ),
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment:
-                        MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'ESTADO DEL JARDÍN',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                          fontWeight:
-                              FontWeight.bold,
-                          letterSpacing: 1,
-                        ),
-                      ),
+if (valor == null) {
+return valorDefecto;
+}
 
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration:
-                                const BoxDecoration(
-                              color:
-                                  Colors.lightGreenAccent,
-                              shape:
-                                  BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            sistemaActivo
-                                ? 'Activo'
-                                : 'Inactivo',
-                            style:
-                                const TextStyle(
-                              color: Colors.white,
-                              fontWeight:
-                                  FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+final numero = double.tryParse(valor.toString());
 
-                  const SizedBox(height: 8),
+if (numero == null) {
+return valor.toString();
+}
 
-                  const Text(
-                    'Jardín Principal',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 21,
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
-                  ),
+if (numero == numero.roundToDouble()) {
+return numero.toInt().toString();
+}
 
-                  const SizedBox(height: 25),
+return numero.toStringAsFixed(1);
+}
 
-                  Row(
-                    mainAxisAlignment:
-                        MainAxisAlignment.spaceBetween,
-                    children: [
-                      _gardenStat(
-                        '72%',
-                        'Humedad',
-                      ),
-                      _gardenStat(
-                        '88%',
-                        'Salud',
-                      ),
-                      _gardenStat(
-                        '61%',
-                        'Luz',
-                      ),
+// ============================================================
+// RIEGO MANUAL
+// ============================================================
 
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            sistemaActivo =
-                                !sistemaActivo;
-                          });
-                        },
-                        child: Container(
-                          padding:
-                              const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 9,
-                          ),
-                          decoration:
-                              BoxDecoration(
-                            color: Colors.white
-                                .withValues(
-                              alpha: 0.15,
-                            ),
-                            borderRadius:
-                                BorderRadius.circular(
-                              12,
-                            ),
-                          ),
-                          child: Text(
-                            sistemaActivo
-                                ? 'Desactivar'
-                                : 'Activar',
-                            style:
-                                const TextStyle(
-                              color: Colors.white,
-                              fontWeight:
-                                  FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+void activarRiegoManual() {
+setState(() {
+riegoManual = !riegoManual;
+});
 
-            const SizedBox(height: 20),
+ScaffoldMessenger.of(context).showSnackBar(
+SnackBar(
+content: Text(
+riegoManual
+? 'Riego manual activado'
+    : 'Riego manual desactivado',
+),
+),
+);
+}
 
-            // ==================================================
-            // MÉTRICAS
-            // ==================================================
+// ============================================================
+// BUILD
+// ============================================================
 
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics:
-                  const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 14,
-              mainAxisSpacing: 14,
-              childAspectRatio: 1.15,
-              children: const [
-                MetricCard(
-                  icon: Icons.water_drop,
-                  value: '72%',
-                  title: 'Humedad suelo',
-                  status: 'Nivel adecuado',
-                  change: '+3%',
-                ),
+@override
+Widget build(BuildContext context) {
+return Scaffold(
+backgroundColor: const Color(0xFFF5F7F5),
+body: _buildCurrentPage(),
+bottomNavigationBar: NavigationBar(
+selectedIndex: currentIndex,
+onDestinationSelected: (index) {
+setState(() {
+currentIndex = index;
+});
+},
+destinations: const [
+NavigationDestination(
+icon: Icon(Icons.home_outlined),
+selectedIcon: Icon(Icons.home),
+label: 'Inicio',
+),
+NavigationDestination(
+icon: Icon(Icons.eco_outlined),
+selectedIcon: Icon(Icons.eco),
+label: 'Jardines',
+),
+NavigationDestination(
+icon: Icon(Icons.smart_toy_outlined),
+selectedIcon: Icon(Icons.smart_toy),
+label: 'Asistente',
+),
+NavigationDestination(
+icon: Icon(Icons.settings_outlined),
+selectedIcon: Icon(Icons.settings),
+label: 'Config.',
+),
+],
+),
+);
+}
 
-                MetricCard(
-                  icon: Icons.thermostat,
-                  value: '24°C',
-                  title: 'Temperatura',
-                  status: 'Estable',
-                  change: 'Normal',
-                ),
+// ============================================================
+// PÁGINA ACTUAL
+// ============================================================
 
-                MetricCard(
-                  icon:
-                      Icons.water_drop_outlined,
-                  value: '58%',
-                  title: 'Humedad ambiental',
-                  status: 'Nivel adecuado',
-                  change: '-2%',
-                ),
+Widget _buildCurrentPage() {
+switch (currentIndex) {
+case 1:
+return JardinesPage(
+token: widget.token,
+);
 
-                MetricCard(
-                  icon: Icons.wb_sunny,
-                  value: '8.2k',
-                  title: 'Intensidad luz',
-                  status: 'Alta',
-                  change: 'Lux',
-                ),
-              ],
-            ),
+case 2:
+return AsistentePage(
+token: widget.token,
+);
 
-            const SizedBox(height: 20),
+case 3:
+return const ConfiguracionPage();
 
-            // ==================================================
-            // RIEGO MANUAL
-            // ==================================================
+default:
+return _buildDashboard();
+}
+}
 
-            SizedBox(
-              width: double.infinity,
-              height: 58,
-              child: ElevatedButton.icon(
-                onPressed:
-                    activarRiegoManual,
-                icon: Icon(
-                  riegoManual
-                      ? Icons.water_drop
-                      : Icons.water_drop_outlined,
-                ),
-                label: Text(
-                  riegoManual
-                      ? 'Riego Manual Activo'
-                      : 'Activar Riego Manual',
-                ),
-                style:
-                    ElevatedButton.styleFrom(
-                  backgroundColor:
-                      riegoManual
-                          ? Colors.blue
-                          : const Color(
-                              0xFF2E7D32,
-                            ),
-                  foregroundColor:
-                      Colors.white,
-                  shape:
-                      RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(16),
-                  ),
-                  textStyle:
-                      const TextStyle(
-                    fontSize: 15,
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
+// ============================================================
+// DASHBOARD
+// ============================================================
 
-            const SizedBox(height: 20),
+Widget _buildDashboard() {
+final humedadSuelo =
+obtenerValor('Humedad del suelo');
 
-            // ==================================================
-            // CONSUMO DE AGUA
-            // ==================================================
+final temperatura =
+obtenerValor('Temperatura');
 
-            Container(
-              width: double.infinity,
-              height: 180,
-              padding:
-                  const EdgeInsets.all(20),
-              decoration:
-                  BoxDecoration(
-                color: Colors.white,
-                borderRadius:
-                    BorderRadius.circular(20),
-              ),
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment:
-                        MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Consumo de Agua',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight:
-                              FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        'Últimos 15 días',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color:
-                              Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
+final humedadAmbiental =
+obtenerValor('Humedad ambiental');
 
-                  const SizedBox(height: 25),
+final luz =
+obtenerValor('Luz');
 
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.end,
-                      mainAxisAlignment:
-                          MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _bar(0.45),
-                        _bar(0.65),
-                        _bar(0.55),
-                        _bar(0.80),
-                        _bar(0.60),
-                        _bar(0.90),
-                        _bar(0.70),
-                        _bar(0.50),
-                        _bar(0.75),
-                        _bar(0.85),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+return SafeArea(
+child: RefreshIndicator(
+onRefresh: cargarLecturas,
+child: SingleChildScrollView(
+physics: const AlwaysScrollableScrollPhysics(),
+padding: const EdgeInsets.fromLTRB(
+20,
+20,
+20,
+30,
+),
+child: Column(
+crossAxisAlignment: CrossAxisAlignment.start,
+children: [
+// ==================================================
+// ENCABEZADO
+// ==================================================
 
-  // ============================================================
-  // ESTADÍSTICA DEL JARDÍN
-  // ============================================================
+Row(
+mainAxisAlignment:
+MainAxisAlignment.spaceBetween,
+children: [
+Column(
+crossAxisAlignment:
+CrossAxisAlignment.start,
+children: [
+Text(
+'Buenos días,',
+style: TextStyle(
+fontSize: 15,
+color: Colors.grey.shade600,
+),
+),
+const SizedBox(height: 3),
+const Text(
+'Carlos 👋',
+style: TextStyle(
+fontSize: 25,
+fontWeight: FontWeight.bold,
+),
+),
+],
+),
 
-  Widget _gardenStat(
-    String value,
-    String label,
-  ) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight:
-                FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 11,
-          ),
-        ),
-      ],
-    );
-  }
+Container(
+decoration: BoxDecoration(
+color: Colors.white,
+borderRadius:
+BorderRadius.circular(14),
+),
+child: IconButton(
+onPressed: () {
+Navigator.push(
+context,
+MaterialPageRoute(
+builder: (context) =>
+const NotificacionesPage(),
+),
+);
+},
+icon: const Icon(
+Icons.notifications_none,
+size: 27,
+),
+),
+),
+],
+),
 
-  // ============================================================
-  // BARRA DE GRÁFICA
-  // ============================================================
+const SizedBox(height: 25),
 
-  Widget _bar(double height) {
-    return Container(
-      width: 12,
-      height: 75 * height,
-      decoration: BoxDecoration(
-        color: const Color(0xFF66BB6A),
-        borderRadius:
-            BorderRadius.circular(10),
-      ),
-    );
-  }
+// ==================================================
+// ESTADO DEL JARDÍN
+// ==================================================
+
+Container(
+width: double.infinity,
+padding: const EdgeInsets.all(20),
+decoration: BoxDecoration(
+color: const Color(0xFF2E7D32),
+borderRadius:
+BorderRadius.circular(22),
+),
+child: Column(
+crossAxisAlignment:
+CrossAxisAlignment.start,
+children: [
+Row(
+mainAxisAlignment:
+MainAxisAlignment.spaceBetween,
+children: [
+const Text(
+'ESTADO DEL JARDÍN',
+style: TextStyle(
+color: Colors.white70,
+fontSize: 12,
+fontWeight:
+FontWeight.bold,
+letterSpacing: 1,
+),
+),
+
+Row(
+children: [
+Container(
+width: 8,
+height: 8,
+decoration:
+const BoxDecoration(
+color:
+Colors.lightGreenAccent,
+shape:
+BoxShape.circle,
+),
+),
+const SizedBox(width: 6),
+Text(
+sistemaActivo
+? 'Activo'
+    : 'Inactivo',
+style:
+const TextStyle(
+color: Colors.white,
+fontWeight:
+FontWeight.bold,
+),
+),
+],
+),
+],
+),
+
+const SizedBox(height: 8),
+
+const Text(
+'Jardín Principal',
+style: TextStyle(
+color: Colors.white,
+fontSize: 21,
+fontWeight:
+FontWeight.bold,
+),
+),
+
+const SizedBox(height: 25),
+
+Row(
+mainAxisAlignment:
+MainAxisAlignment.spaceBetween,
+children: [
+_gardenStat(
+'$humedadSuelo%',
+'Humedad',
+),
+
+_gardenStat(
+'88%',
+'Salud',
+),
+
+_gardenStat(
+luz == '--'
+? '--'
+    : '$luz lux',
+'Luz',
+),
+
+GestureDetector(
+onTap: () {
+setState(() {
+sistemaActivo =
+!sistemaActivo;
+});
+},
+child: Container(
+padding:
+const EdgeInsets.symmetric(
+horizontal: 12,
+vertical: 9,
+),
+decoration:
+BoxDecoration(
+color: Colors.white
+    .withValues(
+alpha: 0.15,
+),
+borderRadius:
+BorderRadius.circular(
+12,
+),
+),
+child: Text(
+sistemaActivo
+? 'Desactivar'
+    : 'Activar',
+style:
+const TextStyle(
+color: Colors.white,
+fontWeight:
+FontWeight.bold,
+fontSize: 12,
+),
+),
+),
+),
+],
+),
+],
+),
+),
+
+const SizedBox(height: 20),
+
+// ==================================================
+// ESTADO DE CARGA / ERROR
+// ==================================================
+
+if (cargandoLecturas)
+const Padding(
+padding: EdgeInsets.only(
+bottom: 15,
+),
+child: Center(
+child: CircularProgressIndicator(),
+),
+),
+
+if (errorLecturas != null)
+Container(
+width: double.infinity,
+margin: const EdgeInsets.only(
+bottom: 15,
+),
+padding: const EdgeInsets.all(14),
+decoration: BoxDecoration(
+color: Colors.red.shade50,
+borderRadius:
+BorderRadius.circular(12),
+),
+child: Row(
+children: [
+Icon(
+Icons.error_outline,
+color: Colors.red.shade700,
+),
+const SizedBox(width: 10),
+Expanded(
+child: Text(
+'No se pudieron cargar las lecturas.',
+style: TextStyle(
+color:
+Colors.red.shade700,
+),
+),
+),
+IconButton(
+onPressed: cargarLecturas,
+icon: const Icon(
+Icons.refresh,
+),
+),
+],
+),
+),
+
+// ==================================================
+// MÉTRICAS
+// ==================================================
+
+GridView.count(
+crossAxisCount: 2,
+shrinkWrap: true,
+physics:
+const NeverScrollableScrollPhysics(),
+crossAxisSpacing: 14,
+mainAxisSpacing: 14,
+childAspectRatio: 1.15,
+children: [
+MetricCard(
+icon: Icons.water_drop,
+value: '$humedadSuelo%',
+title: 'Humedad suelo',
+status:
+humedadSuelo == '--'
+? 'Sin datos'
+    : 'Lectura actual',
+change: 'Sector 1',
+),
+
+MetricCard(
+icon: Icons.thermostat,
+value: '$temperatura°C',
+title: 'Temperatura',
+status:
+temperatura == '--'
+? 'Sin datos'
+    : 'Lectura actual',
+change: 'Sector 1',
+),
+
+MetricCard(
+icon:
+Icons.water_drop_outlined,
+value: '$humedadAmbiental%',
+title: 'Humedad ambiental',
+status:
+humedadAmbiental == '--'
+? 'Sin datos'
+    : 'Lectura actual',
+change: 'Sector 1',
+),
+
+MetricCard(
+icon: Icons.wb_sunny,
+value:
+luz == '--'
+? '--'
+    : '${luz}k',
+title: 'Intensidad luz',
+status:
+luz == '--'
+? 'Sin datos'
+    : 'Lectura actual',
+change: 'Lux',
+),
+],
+),
+
+const SizedBox(height: 20),
+
+// ==================================================
+// RIEGO MANUAL
+// ==================================================
+
+SizedBox(
+width: double.infinity,
+height: 58,
+child: ElevatedButton.icon(
+onPressed:
+activarRiegoManual,
+icon: Icon(
+riegoManual
+? Icons.water_drop
+    : Icons.water_drop_outlined,
+),
+label: Text(
+riegoManual
+? 'Riego Manual Activo'
+    : 'Activar Riego Manual',
+),
+style:
+ElevatedButton.styleFrom(
+backgroundColor:
+riegoManual
+? Colors.blue
+    : const Color(
+0xFF2E7D32,
+),
+foregroundColor:
+Colors.white,
+shape:
+RoundedRectangleBorder(
+borderRadius:
+BorderRadius.circular(16),
+),
+textStyle:
+const TextStyle(
+fontSize: 15,
+fontWeight:
+FontWeight.bold,
+),
+),
+),
+),
+
+const SizedBox(height: 20),
+
+// ==================================================
+// CONSUMO DE AGUA
+// ==================================================
+
+Container(
+width: double.infinity,
+height: 180,
+padding:
+const EdgeInsets.all(20),
+decoration:
+BoxDecoration(
+color: Colors.white,
+borderRadius:
+BorderRadius.circular(20),
+),
+child: Column(
+crossAxisAlignment:
+CrossAxisAlignment.start,
+children: [
+Row(
+mainAxisAlignment:
+MainAxisAlignment.spaceBetween,
+children: [
+const Text(
+'Consumo de Agua',
+style: TextStyle(
+fontSize: 17,
+fontWeight:
+FontWeight.bold,
+),
+),
+Text(
+'Últimos 15 días',
+style: TextStyle(
+fontSize: 12,
+color:
+Colors.grey.shade600,
+),
+),
+],
+),
+
+const SizedBox(height: 25),
+
+Expanded(
+child: Row(
+crossAxisAlignment:
+CrossAxisAlignment.end,
+mainAxisAlignment:
+MainAxisAlignment.spaceEvenly,
+children: [
+_bar(0.45),
+_bar(0.65),
+_bar(0.55),
+_bar(0.80),
+_bar(0.60),
+_bar(0.90),
+_bar(0.70),
+_bar(0.50),
+_bar(0.75),
+_bar(0.85),
+],
+),
+),
+],
+),
+),
+],
+),
+),
+),
+);
+}
+
+// ============================================================
+// ESTADÍSTICA DEL JARDÍN
+// ============================================================
+
+Widget _gardenStat(
+String value,
+String label,
+) {
+return Column(
+children: [
+Text(
+value,
+style: const TextStyle(
+color: Colors.white,
+fontSize: 20,
+fontWeight:
+FontWeight.bold,
+),
+),
+const SizedBox(height: 4),
+Text(
+label,
+style: const TextStyle(
+color: Colors.white70,
+fontSize: 11,
+),
+),
+],
+);
+}
+
+// ============================================================
+// BARRA DE GRÁFICA
+// ============================================================
+
+Widget _bar(double height) {
+return Container(
+width: 12,
+height: 75 * height,
+decoration: BoxDecoration(
+color: const Color(0xFF66BB6A),
+borderRadius:
+BorderRadius.circular(10),
+),
+);
+}
 }

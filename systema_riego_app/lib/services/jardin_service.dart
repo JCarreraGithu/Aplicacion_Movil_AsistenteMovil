@@ -4,6 +4,10 @@ import 'package:http/http.dart' as http;
 class JardinService {
   static const String baseUrl = 'http://10.0.2.2:3000';
 
+  // 👇 FIX: timeout para no quedar colgado indefinidamente
+  // si el backend no responde.
+  static const Duration _timeout = Duration(seconds: 10);
+
   static Future<List<dynamic>> obtenerJardines({
     required String token,
   }) async {
@@ -12,6 +16,13 @@ class JardinService {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      _timeout,
+      onTimeout: () {
+        throw Exception(
+          'El servidor no respondió a tiempo al obtener jardines (timeout).',
+        );
       },
     );
 
@@ -35,6 +46,13 @@ class JardinService {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      _timeout,
+      onTimeout: () {
+        throw Exception(
+          'El servidor no respondió a tiempo al obtener sectores (timeout).',
+        );
       },
     );
 

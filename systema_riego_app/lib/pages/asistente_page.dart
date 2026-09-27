@@ -133,6 +133,7 @@ class _AsistentePageState extends State<AsistentePage> {
       });
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         bajarChat();
       });
     } catch (e) {
@@ -156,8 +157,6 @@ class _AsistentePageState extends State<AsistentePage> {
     final pregunta =
     preguntaController.text.trim();
 
-    // Si hay imagen, se permite enviar aunque
-    // el usuario no haya escrito texto.
     if (imagenSeleccionada != null) {
       await analizarPlanta(
         imagenSeleccionada!,
@@ -166,7 +165,6 @@ class _AsistentePageState extends State<AsistentePage> {
       return;
     }
 
-    // Consulta normal de texto
     if (pregunta.isEmpty ||
         cargando ||
         analizandoImagen) {
@@ -289,6 +287,8 @@ class _AsistentePageState extends State<AsistentePage> {
         return;
       }
 
+      if (!mounted) return;
+
       setState(() {
         imagenSeleccionada = imagen;
       });
@@ -323,6 +323,8 @@ class _AsistentePageState extends State<AsistentePage> {
 
     final pregunta =
     preguntaUsuario.trim();
+
+    if (!mounted) return;
 
     setState(() {
       analizandoImagen = true;
@@ -368,16 +370,8 @@ class _AsistentePageState extends State<AsistentePage> {
         '====================================',
       );
 
-      // ========================================================
-      // LEER IMAGEN
-      // ========================================================
-
       final bytes =
       await imagen.readAsBytes();
-
-      // ========================================================
-      // LLAMAR AL BACKEND
-      // ========================================================
 
       final resultado =
       await IaService.analizarPlanta(
@@ -433,10 +427,11 @@ class _AsistentePageState extends State<AsistentePage> {
   // ============================================================
 
   void bajarChat() {
+    if (!mounted) return;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!scrollController.hasClients) {
-        return;
-      }
+      if (!mounted) return;
+      if (!scrollController.hasClients) return;
 
       scrollController.animateTo(
         scrollController.position.maxScrollExtent,
@@ -452,6 +447,8 @@ class _AsistentePageState extends State<AsistentePage> {
   // ============================================================
 
   void usarSugerencia(String texto) {
+    if (!mounted) return;
+
     preguntaController.text = texto;
 
     preguntaController.selection =
@@ -473,10 +470,6 @@ class _AsistentePageState extends State<AsistentePage> {
       backgroundColor:
       const Color(0xFFF5F7F5),
 
-      // ========================================================
-      // APP BAR
-      // ========================================================
-
       appBar: AppBar(
         title: const Text(
           'Asistente de Jardinería',
@@ -488,19 +481,11 @@ class _AsistentePageState extends State<AsistentePage> {
         elevation: 0,
       ),
 
-      // ========================================================
-      // BODY
-      // ========================================================
-
       body: ScrollConfiguration(
         behavior: AppScrollBehavior(),
 
         child: Column(
           children: [
-            // ==================================================
-            // ENCABEZADO
-            // ==================================================
-
             Container(
               margin:
               const EdgeInsets.fromLTRB(
@@ -509,7 +494,6 @@ class _AsistentePageState extends State<AsistentePage> {
                 20,
                 10,
               ),
-
               padding:
               const EdgeInsets.all(18),
 
@@ -574,10 +558,6 @@ class _AsistentePageState extends State<AsistentePage> {
               ),
             ),
 
-            // ==================================================
-            // CHAT
-            // ==================================================
-
             Expanded(
               child: cargandoHistorial
                   ? const Center(
@@ -599,6 +579,7 @@ class _AsistentePageState extends State<AsistentePage> {
                 const Radius.circular(
                   10,
                 ),
+
                 child:
                 ListView.builder(
                   controller:
@@ -652,10 +633,6 @@ class _AsistentePageState extends State<AsistentePage> {
               ),
             ),
 
-            // ==================================================
-            // CAMPO DE MENSAJE
-            // ==================================================
-
             Container(
               padding:
               const EdgeInsets.fromLTRB(
@@ -682,13 +659,10 @@ class _AsistentePageState extends State<AsistentePage> {
 
                 child: Column(
                   children: [
-                    // ==========================================
-                    // PREVISUALIZACIÓN DE IMAGEN
-                    // ==========================================
-
                     if (imagenSeleccionada != null)
                       Container(
                         width: double.infinity,
+
                         margin:
                         const EdgeInsets.only(
                           bottom: 10,
@@ -727,8 +701,9 @@ class _AsistentePageState extends State<AsistentePage> {
                                         .circular(
                                       10,
                                     ),
-                                    child: Image
-                                        .memory(
+
+                                    child:
+                                    Image.memory(
                                       snapshot.data!,
                                       width: 70,
                                       height: 70,
@@ -740,16 +715,19 @@ class _AsistentePageState extends State<AsistentePage> {
                                 return Container(
                                   width: 70,
                                   height: 70,
+
                                   decoration:
                                   BoxDecoration(
                                     color:
-                                    Colors.grey.shade300,
+                                    Colors.grey
+                                        .shade300,
                                     borderRadius:
                                     BorderRadius
                                         .circular(
                                       10,
                                     ),
                                   ),
+
                                   child:
                                   const Icon(
                                     Icons.image,
@@ -760,7 +738,9 @@ class _AsistentePageState extends State<AsistentePage> {
                               },
                             ),
 
-                            const SizedBox(width: 10),
+                            const SizedBox(
+                              width: 10,
+                            ),
 
                             const Expanded(
                               child: Text(
@@ -774,11 +754,16 @@ class _AsistentePageState extends State<AsistentePage> {
 
                             IconButton(
                               onPressed: () {
+                                if (!mounted) {
+                                  return;
+                                }
+
                                 setState(() {
                                   imagenSeleccionada =
                                   null;
                                 });
                               },
+
                               icon: const Icon(
                                 Icons.close,
                               ),
@@ -787,19 +772,11 @@ class _AsistentePageState extends State<AsistentePage> {
                         ),
                       ),
 
-                    // ==========================================
-                    // FILA DE MENSAJE
-                    // ==========================================
-
                     Row(
                       crossAxisAlignment:
                       CrossAxisAlignment.end,
 
                       children: [
-                        // ======================================
-                        // BOTÓN CÁMARA
-                        // ======================================
-
                         Container(
                           decoration:
                           const BoxDecoration(
@@ -829,10 +806,6 @@ class _AsistentePageState extends State<AsistentePage> {
                         ),
 
                         const SizedBox(width: 8),
-
-                        // ======================================
-                        // CAMPO TEXTO
-                        // ======================================
 
                         Expanded(
                           child: TextField(
@@ -883,10 +856,6 @@ class _AsistentePageState extends State<AsistentePage> {
                         ),
 
                         const SizedBox(width: 8),
-
-                        // ======================================
-                        // BOTÓN ENVIAR
-                        // ======================================
 
                         Container(
                           decoration:
@@ -981,10 +950,6 @@ class _AsistentePageState extends State<AsistentePage> {
           ),
 
           const SizedBox(height: 25),
-
-          // ====================================================
-          // ANALIZAR PLANTA
-          // ====================================================
 
           Container(
             width: double.infinity,

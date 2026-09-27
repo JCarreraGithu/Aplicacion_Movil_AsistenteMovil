@@ -11,7 +11,7 @@ const guardarConsulta = async (req, res) => {
         const idUsuario = req.usuario.id_usuario;
         const { pregunta } = req.body;
 
-        if (!pregunta) {
+        if (!pregunta || pregunta.trim().length === 0) {
             return res.status(400).json({
                 mensaje: 'La pregunta es obligatoria'
             });
@@ -19,7 +19,8 @@ const guardarConsulta = async (req, res) => {
 
         const respuesta =
             await consultaService.generarRespuesta(
-                pregunta
+                pregunta,
+                idUsuario
             );
 
         const consulta =
@@ -105,7 +106,8 @@ const analizarPlanta = async (req, res) => {
             await consultaService.analizarPlanta({
                 imagenBase64,
                 mimeType,
-                pregunta
+                pregunta,
+                idUsuario
             });
 
         // ================================================
@@ -113,7 +115,7 @@ const analizarPlanta = async (req, res) => {
         // ================================================
 
         const preguntaHistorial =
-            pregunta.trim().isNotEmpty
+            pregunta.trim().length > 0
                 ? pregunta
                 : 'Análisis visual de una planta';
 
@@ -172,6 +174,7 @@ const obtenerConsultas = async (req, res) => {
         });
     }
 };
+
 
 module.exports = {
     guardarConsulta,

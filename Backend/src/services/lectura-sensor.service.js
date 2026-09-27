@@ -107,8 +107,31 @@ const obtenerLecturasPorSensor = async (idSensor) => {
     return result.rows;
 };
 
+const obtenerUltimasLecturasPorSector = async (idSector) => {
+
+    const result = await pool.query(`
+        SELECT DISTINCT ON (s.id_sensor)
+            s.id_sensor,
+            s.codigo,
+            ts.nombre AS tipo_sensor,
+            ls.valor,
+            ls.unidad,
+            ls.fecha_hora
+        FROM SISTEMA_RIEGO.sensor s
+        JOIN SISTEMA_RIEGO.tipo_sensor ts
+            ON ts.id_tipo_sensor = s.id_tipo_sensor
+        JOIN SISTEMA_RIEGO.lectura_sensor ls
+            ON ls.id_sensor = s.id_sensor
+        WHERE s.id_sector = $1
+        AND s.estado = 'ACTIVO'
+        ORDER BY s.id_sensor, ls.fecha_hora DESC
+    `, [idSector]);
+
+    return result.rows;
+};
 
 module.exports = {
     crearLectura,
-    obtenerLecturasPorSensor
+    obtenerLecturasPorSensor,
+    obtenerUltimasLecturasPorSector
 };  

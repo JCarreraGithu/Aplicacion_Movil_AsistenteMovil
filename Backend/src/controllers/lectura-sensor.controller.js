@@ -62,7 +62,28 @@ const obtenerLecturasPorSensor = async (req, res) => {
     }
 };
 
+const obtenerUltimasLecturasPorSector = async (req, res) => {
+    try {
+        const { idSector } = req.params;
+
+        const lecturas =
+            await lecturaService.obtenerUltimasLecturasPorSector(idSector);
+
+        res.json(lecturas);
+
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            mensaje: 'Error al obtener las últimas lecturas',
+            error: error.message
+        });
+    }
+};
+
+
 module.exports = {
     crearLectura,
-    obtenerLecturasPorSensor
+    obtenerLecturasPorSensor,
+    obtenerUltimasLecturasPorSector
 };
