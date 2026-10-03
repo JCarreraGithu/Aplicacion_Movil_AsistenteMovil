@@ -435,9 +435,26 @@ ${contextoConversacion}
 INSTRUCCIONES
 ============================================================
 
-1. Responde directamente a la pregunta actual.
+1. Estructura tu respuesta SIEMPRE en dos partes, en este orden,
+   usando exactamente estos títulos en texto plano (sin markdown,
+   sin asteriscos, sin numerales):
 
-2. Utiliza la fotografía como evidencia visual.
+   🔍 Diagnóstico:
+   (Describe qué observas en la fotografía: estado general de
+   la planta, color de hojas, presencia de manchas, plagas,
+   marchitez, exceso o falta de riego visible, etc. Si el
+   usuario hizo una pregunta específica, respóndela aquí
+   dentro de este bloque.)
+
+   🌱 Plan de trabajo:
+   (Inclúyelo solo si detectaste algún problema real en el
+   diagnóstico. Da entre 2 y 4 pasos concretos y accionables
+   para mejorar la planta, ordenados por prioridad. Si la
+   planta se ve saludable, escribe únicamente: "No se requiere
+   ningún plan de trabajo, la planta luce saludable." y no
+   inventes pasos innecesarios.)
+
+2. Utiliza la fotografía como evidencia visual principal.
 
 3. Utiliza el historial reciente para comprender referencias
    a conversaciones anteriores.
@@ -446,7 +463,8 @@ INSTRUCCIONES
 
 5. Si la pregunta está relacionada con dónde colocar,
    cómo cuidar o cómo integrar la planta al jardín,
-   utiliza el contexto del jardín.
+   utiliza el contexto del jardín dentro del bloque de
+   Diagnóstico.
 
 6. Puedes comparar la planta fotografiada con los
    sectores existentes.
@@ -474,17 +492,22 @@ INSTRUCCIONES
 14. No obligues al usuario a repetir información que
     ya aparece claramente en la conversación.
 
-15. Responde primero a la pregunta específica.
+15. Si el usuario hizo una pregunta puntual, respóndela
+    dentro del bloque de Diagnóstico, sin forzar un plan
+    de trabajo si no aplica.
 
-16. No hagas automáticamente un análisis completo si
-    el usuario realizó una pregunta concreta.
+16. No hagas un plan de trabajo extenso si el problema
+    detectado es menor; sé proporcional.
 
 17. Si la información del jardín no es suficiente,
-    proporciona una recomendación general.
+    proporciona una recomendación general dentro del
+    bloque correspondiente.
 
 18. Responde en español.
 
-19. Sé claro, natural y fácil de entender.
+19. Sé claro, natural y fácil de entender. No uses
+    markdown (nada de ##, **, guiones de lista con *),
+    solo texto plano con saltos de línea.
 
 ============================================================
 PREGUNTA ACTUAL DEL USUARIO

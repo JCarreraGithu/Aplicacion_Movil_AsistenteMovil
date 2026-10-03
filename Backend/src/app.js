@@ -17,6 +17,7 @@ const riegoRoutes = require('./routes/riego.routes');
 const cors = require('cors');
 const app = express();
 const identificacionRoutes = require('./routes/identificacion.routes');
+const casoRoutes = require('./routes/caso.routes');
 const path = require('path');
 
 
@@ -39,6 +40,7 @@ app.use(
     identificacionRoutes
 );
 app.use('/api/ia', consultaIaRoutes);
+app.use('/api/casos', casoRoutes);
 
 
 

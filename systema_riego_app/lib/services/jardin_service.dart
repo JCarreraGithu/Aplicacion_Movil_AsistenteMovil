@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class JardinService {
-  static const String baseUrl = 'http://10.0.2.2:3000';
+  static const String baseUrl = 'http://localhost:3000';
 
   // 👇 FIX: timeout para no quedar colgado indefinidamente
   // si el backend no responde.

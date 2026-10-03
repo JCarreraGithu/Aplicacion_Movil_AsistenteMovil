@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/ia_service.dart';
+import '../services/caso_service.dart';
 
 // ============================================================
 // CONFIGURACIÓN DE SCROLL
@@ -57,7 +58,7 @@ class _AsistentePageState extends State<AsistentePage> {
   // ESTADOS
   // ==========================================================
 
-  List<Map<String, String>> mensajes = [];
+  List<Map<String, dynamic>> mensajes = [];
 
   bool cargando = false;
   bool cargandoHistorial = true;
@@ -111,7 +112,7 @@ class _AsistentePageState extends State<AsistentePage> {
       );
 
       final mensajesCargados =
-      <Map<String, String>>[];
+      <Map<String, dynamic>>[];
 
       for (final consulta in historial.reversed) {
         mensajesCargados.add({
@@ -122,6 +123,7 @@ class _AsistentePageState extends State<AsistentePage> {
         mensajesCargados.add({
           'tipo': 'asistente',
           'texto': consulta['respuesta'] ?? '',
+          'idConsulta': consulta['id_consulta'],
         });
       }
 
@@ -389,12 +391,18 @@ class _AsistentePageState extends State<AsistentePage> {
           resultado['respuesta'] ??
               'No se recibió un análisis de la planta.';
 
+      final idConsulta =
+          resultado['consulta'] != null
+              ? resultado['consulta']['id_consulta']
+              : null;
+
       if (!mounted) return;
 
       setState(() {
         mensajes.add({
           'tipo': 'asistente',
           'texto': respuesta.toString(),
+          'idConsulta': idConsulta,
         });
 
         analizandoImagen = false;
@@ -624,9 +632,11 @@ class _AsistentePageState extends State<AsistentePage> {
 
                     return _burbujaMensaje(
                       tipo:
-                      mensaje['tipo']!,
+                      mensaje['tipo'] as String,
                       texto:
-                      mensaje['texto']!,
+                      mensaje['texto'] as String,
+                      idConsulta:
+                      mensaje['idConsulta'] as int?,
                     );
                   },
                 ),
@@ -1029,9 +1039,17 @@ class _AsistentePageState extends State<AsistentePage> {
   Widget _burbujaMensaje({
     required String tipo,
     required String texto,
+    int? idConsulta,
   }) {
     final bool usuario =
         tipo == 'usuario';
+
+    final bool tieneProblema =
+        !usuario &&
+        texto.contains('🌱 Plan de trabajo:') &&
+        !texto.contains(
+          'No se requiere ningún plan de trabajo',
+        );
 
     return Align(
       alignment: usuario
@@ -1154,10 +1172,92 @@ class _AsistentePageState extends State<AsistentePage> {
                     : Colors.black87,
               ),
             ),
+
+            if (tieneProblema) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor:
+                        const Color(0xFF2E7D32),
+                    side: const BorderSide(
+                      color: Color(0xFF2E7D32),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(
+                    Icons.healing_outlined,
+                    size: 18,
+                  ),
+                  label: const Text(
+                    'Abrir caso de seguimiento',
+                  ),
+                  onPressed: () => _abrirCaso(
+                    texto,
+                    idConsulta,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  // ============================================================
+  // ABRIR CASO DE SEGUIMIENTO (a partir de un diagnóstico)
+  // ============================================================
+
+  void _abrirCaso(String texto, int? idConsulta) async {
+    String diagnostico = texto;
+    String planTrabajo = texto;
+
+    final marcaPlan = '🌱 Plan de trabajo:';
+    final indicePlan = texto.indexOf(marcaPlan);
+
+    if (indicePlan != -1) {
+      diagnostico = texto
+          .substring(0, indicePlan)
+          .replaceFirst('🔍 Diagnóstico:', '')
+          .trim();
+      planTrabajo = texto
+          .substring(indicePlan + marcaPlan.length)
+          .trim();
+    }
+
+    try {
+      await CasoService.crearCaso(
+        token: widget.token,
+        idConsulta: idConsulta,
+        titulo:
+            'Caso del ${DateTime.now().day}/${DateTime.now().month}',
+        diagnostico: diagnostico,
+        planTrabajo: planTrabajo,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Caso creado. Podrás darle seguimiento desde "Mis Casos".',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo crear el caso.'),
+        ),
+      );
+    }
   }
 
   // ============================================================

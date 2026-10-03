@@ -25,7 +25,7 @@ class _JardinesPageState extends State<JardinesPage> {
   // CONFIGURACIÓN
   // ============================================================
 
-  final String baseUrl = 'http://10.0.2.2:3000/api';
+  final String baseUrl = 'http://localhost:3000/api';
 
   // 👇 FIX: timeouts para no quedar colgado indefinidamente
   // si el backend no responde.
@@ -1414,7 +1414,7 @@ class _JardinesPageState extends State<JardinesPage> {
       if (foto.startsWith('http://') || foto.startsWith('https://')) {
         imagenUrl = foto;
       } else {
-        imagenUrl = 'http://10.0.2.2:3000$foto';
+        imagenUrl = 'http://localhost:3000$foto';
       }
     }
 

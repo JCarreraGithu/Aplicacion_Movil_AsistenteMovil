@@ -5,6 +5,7 @@ import 'notificaciones_page.dart';
 import 'jardines_page.dart';
 import 'asistente_page.dart';
 import 'configuracion_page.dart';
+import 'casos_page.dart';
 
 class DashboardPage extends StatefulWidget {
 final String token;
@@ -294,6 +295,31 @@ const NotificacionesPage(),
 },
 icon: const Icon(
 Icons.notifications_none,
+size: 27,
+),
+),
+),
+
+const SizedBox(width: 8),
+
+Container(
+decoration: BoxDecoration(
+color: Colors.white,
+borderRadius:
+BorderRadius.circular(14),
+),
+child: IconButton(
+onPressed: () {
+Navigator.push(
+context,
+MaterialPageRoute(
+builder: (context) =>
+CasosPage(token: widget.token),
+),
+);
+},
+icon: const Icon(
+Icons.healing_outlined,
 size: 27,
 ),
 ),
