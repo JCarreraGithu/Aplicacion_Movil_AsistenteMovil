@@ -9,7 +9,7 @@ const guardarConsulta = async (req, res) => {
     try {
 
         const idUsuario = req.usuario.id_usuario;
-        const { pregunta } = req.body;
+        const { pregunta, contexto_caso } = req.body;
 
         if (!pregunta || pregunta.trim().length === 0) {
             return res.status(400).json({
@@ -20,7 +20,8 @@ const guardarConsulta = async (req, res) => {
         const respuesta =
             await consultaService.generarRespuesta(
                 pregunta,
-                idUsuario
+                idUsuario,
+                contexto_caso
             );
 
         const consulta =

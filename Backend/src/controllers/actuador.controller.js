@@ -62,7 +62,31 @@ const obtenerActuadoresPorSector = async (req, res) => {
     }
 };
 
+const actualizarEstadoActuador = async (req, res) => {
+    try {
+        const { idActuador } = req.params;
+        const { estado } = req.body;
+        if (!estado || !['encendido', 'apagado'].includes(String(estado).toLowerCase())) {
+            return res.status(400).json({ mensaje: 'El estado debe ser encendido o apagado' });
+        }
+
+        const actuador = await actuadorService.actualizarEstadoActuador(
+            idActuador,
+            req.usuario.id_usuario,
+            String(estado).toLowerCase()
+        );
+        if (!actuador) {
+            return res.status(404).json({ mensaje: 'Actuador no encontrado' });
+        }
+        res.json(actuador);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ mensaje: 'Error al actualizar el estado del actuador' });
+    }
+};
+
 module.exports = {
     crearActuador,
-    obtenerActuadoresPorSector
+    obtenerActuadoresPorSector,
+    actualizarEstadoActuador
 };

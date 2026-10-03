@@ -2,7 +2,8 @@ const express = require('express');
 
 const {
     crearActuador,
-    obtenerActuadoresPorSector
+    obtenerActuadoresPorSector,
+    actualizarEstadoActuador
 } = require('../controllers/actuador.controller');
 
 const verificarToken = require('../middlewares/auth.middleware');
@@ -14,5 +15,6 @@ router.use(verificarToken);
 router.post('/', crearActuador);
 
 router.get('/sector/:idSector', obtenerActuadoresPorSector);
+router.patch('/:idActuador/estado', actualizarEstadoActuador);
 
 module.exports = router;

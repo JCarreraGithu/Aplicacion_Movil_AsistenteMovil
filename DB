@@ -270,3 +270,49 @@ CREATE TABLE clima (
         REFERENCES sector(id_sector)
         ON DELETE CASCADE
 );
+
+
+-- ============================================================
+-- MÓDULO: SEGUIMIENTO DE CASOS
+-- Corresponde a la entidad "HistorialPlanta" ya documentada
+-- en el ERD (Capítulo 4) del proyecto, implementada ahora
+-- como caso_planta + seguimiento_caso.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS SISTEMA_RIEGO.caso_planta (
+    id_caso         SERIAL PRIMARY KEY,
+    id_usuario      INT NOT NULL
+        REFERENCES SISTEMA_RIEGO.usuario(id_usuario),
+    id_planta       INT
+        REFERENCES SISTEMA_RIEGO.planta(id_planta),
+    id_consulta     INT
+        REFERENCES SISTEMA_RIEGO.consulta_ia(id_consulta),
+    titulo          VARCHAR(150) NOT NULL,
+    diagnostico     TEXT NOT NULL,
+    plan_trabajo    TEXT NOT NULL,
+    estado          VARCHAR(20) NOT NULL DEFAULT 'abierto',
+    fecha_apertura  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_cierre    TIMESTAMP,
+
+    CONSTRAINT chk_caso_estado
+        CHECK (estado IN ('abierto', 'en_progreso', 'resuelto', 'abandonado'))
+);
+
+CREATE TABLE IF NOT EXISTS SISTEMA_RIEGO.seguimiento_caso (
+    id_seguimiento  SERIAL PRIMARY KEY,
+    id_caso         INT NOT NULL
+        REFERENCES SISTEMA_RIEGO.caso_planta(id_caso)
+        ON DELETE CASCADE,
+    nota            TEXT NOT NULL,
+    imagen_url      VARCHAR(255),
+    fecha           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_caso_planta_usuario
+    ON SISTEMA_RIEGO.caso_planta(id_usuario);
+
+CREATE INDEX IF NOT EXISTS idx_seguimiento_caso_caso
+    ON SISTEMA_RIEGO.seguimiento_caso(id_caso);
+
+
+commit;

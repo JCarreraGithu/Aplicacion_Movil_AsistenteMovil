@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 
 class CasoService {
@@ -17,6 +18,7 @@ class CasoService {
   static Future<Map<String, dynamic>> crearCaso({
     required String token,
     int? idPlanta,
+    int? idSector,
     int? idConsulta,
     required String titulo,
     required String diagnostico,
@@ -28,6 +30,7 @@ class CasoService {
           headers: _headers(token),
           body: jsonEncode({
             if (idPlanta != null) 'id_planta': idPlanta,
+            if (idSector != null) 'id_sector': idSector,
             if (idConsulta != null) 'id_consulta': idConsulta,
             'titulo': titulo,
             'diagnostico': diagnostico,
@@ -99,10 +102,7 @@ class CasoService {
     required int idCaso,
   }) async {
     final response = await http
-        .get(
-          Uri.parse('$baseUrl/api/casos/$idCaso'),
-          headers: _headers(token),
-        )
+        .get(Uri.parse('$baseUrl/api/casos/$idCaso'), headers: _headers(token))
         .timeout(_timeout, onTimeout: () => throw Exception('Timeout'));
 
     if (response.statusCode == 200) {
@@ -110,6 +110,22 @@ class CasoService {
     }
 
     throw Exception('Error al obtener el caso: ${response.body}');
+  }
+
+  static Future<List<dynamic>> obtenerRecordatoriosActivos({
+    required String token,
+  }) async {
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/api/casos/recordatorios'),
+          headers: _headers(token),
+        )
+        .timeout(_timeout);
+    if (response.statusCode == 200)
+      return jsonDecode(response.body) as List<dynamic>;
+    throw Exception(
+      'Error al obtener notificaciones de casos: ${response.body}',
+    );
   }
 
   // ==========================================================
@@ -137,6 +153,102 @@ class CasoService {
     }
 
     throw Exception('Error al agregar el seguimiento: ${response.body}');
+  }
+
+  static Future<List<dynamic>> obtenerTareas({
+    required String token,
+    required int idCaso,
+  }) async {
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/api/casos/$idCaso/tareas'),
+          headers: _headers(token),
+        )
+        .timeout(_timeout);
+    if (response.statusCode == 200)
+      return jsonDecode(response.body) as List<dynamic>;
+    throw Exception('Error al obtener las tareas: ${response.body}');
+  }
+
+  static Future<Map<String, dynamic>> crearTarea({
+    required String token,
+    required int idCaso,
+    required String descripcion,
+    DateTime? fechaLimite,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/casos/$idCaso/tareas'),
+          headers: _headers(token),
+          body: jsonEncode({
+            'descripcion': descripcion,
+            if (fechaLimite != null)
+              'fecha_limite': fechaLimite.toUtc().toIso8601String(),
+          }),
+        )
+        .timeout(_timeout);
+    if (response.statusCode == 201)
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    throw Exception('Error al crear la tarea: ${response.body}');
+  }
+
+  static Future<Map<String, dynamic>> actualizarTarea({
+    required String token,
+    required int idCaso,
+    required int idTarea,
+    required bool completada,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$baseUrl/api/casos/$idCaso/tareas/$idTarea'),
+          headers: _headers(token),
+          body: jsonEncode({'completada': completada}),
+        )
+        .timeout(_timeout);
+    if (response.statusCode == 200)
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    throw Exception('Error al actualizar la tarea: ${response.body}');
+  }
+
+  static Future<Map<String, dynamic>> crearRecordatorio({
+    required String token,
+    required int idCaso,
+    required String mensaje,
+    required DateTime fecha,
+    int? idTarea,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/casos/$idCaso/recordatorios'),
+          headers: _headers(token),
+          body: jsonEncode({
+            'mensaje': mensaje,
+            'fecha_recordatorio': fecha.toUtc().toIso8601String(),
+            if (idTarea != null) 'id_tarea': idTarea,
+          }),
+        )
+        .timeout(_timeout);
+    if (response.statusCode == 201)
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    throw Exception('Error al programar el recordatorio: ${response.body}');
+  }
+
+  static Future<Map<String, dynamic>> cerrarRecordatorio({
+    required String token,
+    required int idCaso,
+    required int idRecordatorio,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse(
+            '$baseUrl/api/casos/$idCaso/recordatorios/$idRecordatorio/cerrar',
+          ),
+          headers: _headers(token),
+        )
+        .timeout(_timeout);
+    if (response.statusCode == 200)
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    throw Exception('Error al cerrar el recordatorio: ${response.body}');
   }
 
   // ==========================================================

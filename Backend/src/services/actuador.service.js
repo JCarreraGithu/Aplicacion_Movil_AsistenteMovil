@@ -52,7 +52,24 @@ const obtenerActuadoresPorSector = async (idSector) => {
     return result.rows;
 };
 
+const actualizarEstadoActuador = async (idActuador, idUsuario, estado) => {
+    const result = await pool.query(`
+        UPDATE SISTEMA_RIEGO.actuador a
+        SET estado = $3
+        FROM SISTEMA_RIEGO.sector s
+        INNER JOIN SISTEMA_RIEGO.jardin j ON j.id_jardin = s.id_jardin
+        WHERE a.id_sector = s.id_sector
+        AND a.id_actuador = $1
+        AND j.id_usuario = $2
+        RETURNING a.id_actuador, a.id_sector, a.id_tipo_actuador,
+                  a.codigo, a.estado
+    `, [idActuador, idUsuario, estado]);
+
+    return result.rows[0];
+};
+
 module.exports = {
     crearActuador,
-    obtenerActuadoresPorSector
+    obtenerActuadoresPorSector,
+    actualizarEstadoActuador
 };

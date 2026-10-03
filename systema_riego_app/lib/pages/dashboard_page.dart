@@ -209,7 +209,7 @@ token: widget.token,
 );
 
 case 3:
-return const ConfiguracionPage();
+        return ConfiguracionPage(token: widget.token);
 
 default:
 return _buildDashboard();
@@ -289,7 +289,7 @@ Navigator.push(
 context,
 MaterialPageRoute(
 builder: (context) =>
-const NotificacionesPage(),
+                            NotificacionesPage(token: widget.token),
 ),
 );
 },

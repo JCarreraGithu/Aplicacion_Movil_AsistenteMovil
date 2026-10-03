@@ -10,6 +10,7 @@ const crearCaso = async (req, res) => {
 
         const {
             id_planta,
+            id_sector,
             id_consulta,
             titulo,
             diagnostico,
@@ -22,9 +23,15 @@ const crearCaso = async (req, res) => {
                     'titulo, diagnostico y plan_trabajo son obligatorios'
             });
         }
+        if ((id_planta != null && (!Number.isInteger(Number(id_planta)) || Number(id_planta) < 1)) ||
+            (id_sector != null && (!Number.isInteger(Number(id_sector)) || Number(id_sector) < 1)) ||
+            (id_consulta != null && (!Number.isInteger(Number(id_consulta)) || Number(id_consulta) < 1))) {
+            return res.status(400).json({ mensaje: 'Los identificadores de planta, sector y consulta deben ser enteros positivos' });
+        }
 
         const caso = await casoService.crearCaso(idUsuario, {
             id_planta,
+            id_sector,
             id_consulta,
             titulo,
             diagnostico,
@@ -33,7 +40,7 @@ const crearCaso = async (req, res) => {
 
         if (!caso) {
             return res.status(404).json({
-                mensaje: 'La planta indicada no existe o no te pertenece'
+                mensaje: 'La planta, sector o consulta indicada no existe o no te pertenece'
             });
         }
 
@@ -213,11 +220,109 @@ const cambiarEstadoCaso = async (req, res) => {
     }
 };
 
+const obtenerTareas = async (req, res) => {
+    try {
+        const tareas = await casoService.obtenerTareas(req.usuario.id_usuario, req.params.idCaso);
+        if (!tareas) return res.status(404).json({ mensaje: 'Caso no encontrado' });
+        res.json(tareas);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ mensaje: 'Error al obtener las tareas del caso' });
+    }
+};
+
+const crearTarea = async (req, res) => {
+    try {
+        const { descripcion, fecha_limite } = req.body;
+        if (!descripcion || !descripcion.trim()) return res.status(400).json({ mensaje: 'La descripción es obligatoria' });
+        const tarea = await casoService.crearTarea(req.usuario.id_usuario, req.params.idCaso, descripcion.trim(), fecha_limite);
+        if (!tarea) return res.status(404).json({ mensaje: 'Caso no encontrado' });
+        res.status(201).json(tarea);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ mensaje: 'Error al crear la tarea' });
+    }
+};
+
+const actualizarTarea = async (req, res) => {
+    try {
+        const { completada } = req.body;
+        if (typeof completada !== 'boolean') return res.status(400).json({ mensaje: 'completada debe ser booleano' });
+        const tarea = await casoService.actualizarTarea(req.usuario.id_usuario, req.params.idCaso, req.params.idTarea, completada);
+        if (!tarea) return res.status(404).json({ mensaje: 'Tarea o caso no encontrado' });
+        res.json(tarea);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ mensaje: 'Error al actualizar la tarea' });
+    }
+};
+
+const obtenerRecordatorios = async (req, res) => {
+    try {
+        const recordatorios = await casoService.obtenerRecordatorios(req.usuario.id_usuario, req.params.idCaso);
+        if (!recordatorios) return res.status(404).json({ mensaje: 'Caso no encontrado' });
+        res.json(recordatorios);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ mensaje: 'Error al obtener recordatorios' });
+    }
+};
+
+const obtenerRecordatoriosUsuario = async (req, res) => {
+    try {
+        const recordatorios = await casoService.obtenerRecordatoriosUsuario(req.usuario.id_usuario);
+        res.json(recordatorios);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ mensaje: 'Error al obtener las notificaciones de casos' });
+    }
+};
+
+const crearRecordatorio = async (req, res) => {
+    try {
+        const { mensaje, fecha_recordatorio, id_tarea } = req.body;
+        if (!mensaje || !mensaje.trim() || !fecha_recordatorio || Number.isNaN(Date.parse(fecha_recordatorio))) {
+            return res.status(400).json({ mensaje: 'mensaje y fecha_recordatorio válida son obligatorios' });
+        }
+        if (new Date(fecha_recordatorio).getTime() <= Date.now()) {
+            return res.status(400).json({ mensaje: 'El recordatorio debe programarse para una fecha futura' });
+        }
+        const recordatorio = await casoService.crearRecordatorio(
+            req.usuario.id_usuario, req.params.idCaso, mensaje.trim(), fecha_recordatorio, id_tarea
+        );
+        if (!recordatorio) return res.status(404).json({ mensaje: 'Caso o tarea vinculada no encontrada' });
+        res.status(201).json(recordatorio);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ mensaje: 'Error al programar el recordatorio' });
+    }
+};
+
+const completarRecordatorio = async (req, res) => {
+    try {
+        const recordatorio = await casoService.completarRecordatorio(
+            req.usuario.id_usuario, req.params.idCaso, req.params.idRecordatorio
+        );
+        if (!recordatorio) return res.status(404).json({ mensaje: 'Recordatorio o caso no encontrado' });
+        res.json(recordatorio);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ mensaje: 'Error al cerrar recordatorio' });
+    }
+};
+
 module.exports = {
     crearCaso,
     obtenerCasos,
     contarCasosActivos,
     obtenerCasoPorId,
     agregarSeguimiento,
-    cambiarEstadoCaso
+    cambiarEstadoCaso,
+    obtenerTareas,
+    crearTarea,
+    actualizarTarea,
+    obtenerRecordatorios,
+    obtenerRecordatoriosUsuario,
+    crearRecordatorio,
+    completarRecordatorio
 };

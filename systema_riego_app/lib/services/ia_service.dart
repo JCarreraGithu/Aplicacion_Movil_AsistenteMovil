@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
+
 import 'package:http_parser/http_parser.dart';
 import 'package:http/http.dart' as http;
 
 class IaService {
-  static const String baseUrl =
-      'http://localhost:3000';
+  static const String baseUrl = 'http://localhost:3000';
 
   // ============================================================
   // CONSULTAR GEMINI
@@ -14,12 +14,10 @@ class IaService {
   static Future<Map<String, dynamic>> consultarIA({
     required String pregunta,
     required String token,
+    String? contextoCaso,
   }) async {
-
     final response = await http.post(
-      Uri.parse(
-        '$baseUrl/api/ia/consultas',
-      ),
+      Uri.parse('$baseUrl/api/ia/consultas'),
 
       headers: {
         'Content-Type': 'application/json',
@@ -28,18 +26,18 @@ class IaService {
 
       body: jsonEncode({
         'pregunta': pregunta,
+        if (contextoCaso != null && contextoCaso.trim().isNotEmpty)
+          'contexto_caso': contextoCaso,
       }),
     );
 
     if (response.statusCode == 201) {
-      return jsonDecode(
-        response.body,
-      );
+      return jsonDecode(response.body);
     }
 
     throw Exception(
       'Error al consultar IA: '
-          '${response.body}',
+      '${response.body}',
     );
   }
 
@@ -53,31 +51,21 @@ class IaService {
     required String token,
     String pregunta = '',
   }) async {
+    final uri = Uri.parse('$baseUrl/api/ia/analizar-planta');
 
-    final uri = Uri.parse(
-      '$baseUrl/api/ia/analizar-planta',
-    );
-
-    final request =
-    http.MultipartRequest(
-      'POST',
-      uri,
-    );
+    final request = http.MultipartRequest('POST', uri);
 
     // ==========================================================
     // TOKEN
     // ==========================================================
 
-    request.headers[
-    'Authorization'] =
-    'Bearer $token';
+    request.headers['Authorization'] = 'Bearer $token';
 
     // ==========================================================
     // PREGUNTA OPCIONAL
     // ==========================================================
 
-    request.fields[
-    'pregunta'] = pregunta;
+    request.fields['pregunta'] = pregunta;
 
     // ==========================================================
     // IMAGEN
@@ -99,34 +87,27 @@ class IaService {
     // ENVIAR
     // ==========================================================
 
-    final streamedResponse =
-    await request.send();
+    final streamedResponse = await request.send();
 
-    final response =
-    await http.Response.fromStream(
-      streamedResponse,
-    );
+    final response = await http.Response.fromStream(streamedResponse);
 
     print(
       'STATUS ANALISIS PLANTA: '
-          '${response.statusCode}',
+      '${response.statusCode}',
     );
 
     print(
       'RESPUESTA ANALISIS PLANTA: '
-          '${response.body}',
+      '${response.body}',
     );
 
     if (response.statusCode == 201) {
-
-      return jsonDecode(
-        response.body,
-      );
+      return jsonDecode(response.body);
     }
 
     throw Exception(
       'Error al analizar la planta: '
-          '${response.body}',
+      '${response.body}',
     );
   }
 
@@ -134,14 +115,9 @@ class IaService {
   // OBTENER HISTORIAL
   // ============================================================
 
-  static Future<List<dynamic>> obtenerHistorial({
-    required String token,
-  }) async {
-
+  static Future<List<dynamic>> obtenerHistorial({required String token}) async {
     final response = await http.get(
-      Uri.parse(
-        '$baseUrl/api/ia/consultas',
-      ),
+      Uri.parse('$baseUrl/api/ia/consultas'),
 
       headers: {
         'Content-Type': 'application/json',
@@ -151,24 +127,21 @@ class IaService {
 
     print(
       'STATUS HISTORIAL: '
-          '${response.statusCode}',
+      '${response.statusCode}',
     );
 
     print(
       'RESPUESTA HISTORIAL: '
-          '${response.body}',
+      '${response.body}',
     );
 
     if (response.statusCode == 200) {
-
-      return jsonDecode(
-        response.body,
-      );
+      return jsonDecode(response.body);
     }
 
     throw Exception(
       'Error al obtener historial: '
-          '${response.body}',
+      '${response.body}',
     );
   }
 }
