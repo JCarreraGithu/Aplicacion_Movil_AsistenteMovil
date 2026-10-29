@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 class CasoService {
   static const String baseUrl = 'http://localhost:3000';
@@ -23,6 +25,7 @@ class CasoService {
     required String titulo,
     required String diagnostico,
     required String planTrabajo,
+    List<Map<String, dynamic>> pasos = const [],
   }) async {
     final response = await http
         .post(
@@ -35,6 +38,7 @@ class CasoService {
             'titulo': titulo,
             'diagnostico': diagnostico,
             'plan_trabajo': planTrabajo,
+            'pasos': pasos,
           }),
         )
         .timeout(
@@ -135,24 +139,52 @@ class CasoService {
     required String token,
     required int idCaso,
     required String nota,
-    String? imagenUrl,
+    Uint8List? imagenBytes,
+    String? nombreImagen,
+    int? idRecordatorio,
   }) async {
-    final response = await http
-        .post(
-          Uri.parse('$baseUrl/api/casos/$idCaso/seguimientos'),
-          headers: _headers(token),
-          body: jsonEncode({
-            'nota': nota,
-            if (imagenUrl != null) 'imagen_url': imagenUrl,
-          }),
-        )
-        .timeout(_timeout, onTimeout: () => throw Exception('Timeout'));
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/casos/$idCaso/seguimientos'),
+    )..headers['Authorization'] = 'Bearer $token';
+    request.fields['nota'] = nota;
+    if (idRecordatorio != null) {
+      request.fields['id_recordatorio'] = idRecordatorio.toString();
+    }
+    if (imagenBytes != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'imagen',
+          imagenBytes,
+          filename: nombreImagen ?? 'avance.jpg',
+          contentType: _tipoImagen(nombreImagen),
+        ),
+      );
+    }
+
+    final streamedResponse = await request.send().timeout(
+      _timeout,
+      onTimeout: () => throw Exception('Timeout'),
+    );
+    final response = await http.Response.fromStream(streamedResponse);
 
     if (response.statusCode == 201) {
       return jsonDecode(response.body);
     }
 
     throw Exception('Error al agregar el seguimiento: ${response.body}');
+  }
+
+  static MediaType _tipoImagen(String? nombre) {
+    final extension = nombre?.split('.').last.toLowerCase();
+    switch (extension) {
+      case 'png':
+        return MediaType('image', 'png');
+      case 'webp':
+        return MediaType('image', 'webp');
+      default:
+        return MediaType('image', 'jpeg');
+    }
   }
 
   static Future<List<dynamic>> obtenerTareas({
@@ -251,6 +283,29 @@ class CasoService {
     throw Exception('Error al cerrar el recordatorio: ${response.body}');
   }
 
+  static Future<Map<String, dynamic>> actualizarRecordatorio({
+    required String token,
+    required int idCaso,
+    required int idRecordatorio,
+    required String mensaje,
+    required DateTime fecha,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$baseUrl/api/casos/$idCaso/recordatorios/$idRecordatorio'),
+          headers: _headers(token),
+          body: jsonEncode({
+            'mensaje': mensaje,
+            'fecha_recordatorio': fecha.toUtc().toIso8601String(),
+          }),
+        )
+        .timeout(_timeout);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Error al actualizar el recordatorio: ${response.body}');
+  }
+
   // ==========================================================
   // CAMBIAR ESTADO DEL CASO
   // ==========================================================
@@ -272,5 +327,23 @@ class CasoService {
     }
 
     throw Exception('Error al cambiar el estado: ${response.body}');
+  }
+
+  static Future<Map<String, dynamic>> cerrarCasoConResultado({
+    required String token,
+    required int idCaso,
+    required String resultado,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/casos/$idCaso/cerrar'),
+          headers: _headers(token),
+          body: jsonEncode({'resultado': resultado}),
+        )
+        .timeout(_timeout, onTimeout: () => throw Exception('Timeout'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Error al cerrar el caso: ${response.body}');
   }
 }

@@ -84,10 +84,19 @@ const obtenerPlantas = async (idUsuario, idSector) => {
             p.descripcion,
             p.foto_url,
             e.nombre_comun,
-            e.nombre_cientifico
+            e.nombre_cientifico,
+            hp.estado AS estado_salud,
+            hp.fecha AS fecha_estado_salud
         FROM SISTEMA_RIEGO.planta p
-        INNER JOIN SISTEMA_RIEGO.especie_planta e
+        LEFT JOIN SISTEMA_RIEGO.especie_planta e
             ON p.id_especie = e.id_especie
+        LEFT JOIN LATERAL (
+            SELECT h.estado, h.fecha
+            FROM SISTEMA_RIEGO.historial_planta h
+            WHERE h.id_planta = p.id_planta
+            ORDER BY h.fecha DESC
+            LIMIT 1
+        ) hp ON TRUE
         WHERE p.id_sector = $1
         ORDER BY p.id_planta
     `, [idSector]);
@@ -120,10 +129,19 @@ const obtenerPlantaPorId = async (
             p.descripcion,
             p.foto_url,
             e.nombre_comun,
-            e.nombre_cientifico
+            e.nombre_cientifico,
+            hp.estado AS estado_salud,
+            hp.fecha AS fecha_estado_salud
         FROM SISTEMA_RIEGO.planta p
-        INNER JOIN SISTEMA_RIEGO.especie_planta e
+        LEFT JOIN SISTEMA_RIEGO.especie_planta e
             ON p.id_especie = e.id_especie
+        LEFT JOIN LATERAL (
+            SELECT h.estado, h.fecha
+            FROM SISTEMA_RIEGO.historial_planta h
+            WHERE h.id_planta = p.id_planta
+            ORDER BY h.fecha DESC
+            LIMIT 1
+        ) hp ON TRUE
         WHERE p.id_planta = $1
         AND p.id_sector = $2
     `, [

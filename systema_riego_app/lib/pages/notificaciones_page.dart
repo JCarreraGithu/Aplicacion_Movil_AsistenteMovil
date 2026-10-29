@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 import '../services/notificacion_service.dart';
 import '../services/caso_service.dart';
+import '../widgets/app_components.dart';
 import 'casos_page.dart';
 
 class NotificacionesPage extends StatefulWidget {
@@ -60,14 +62,9 @@ class _NotificacionesPageState extends State<NotificacionesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F5),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF5F7F5),
-        elevation: 0,
-        title: const Text(
-          'Notificaciones',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
-        ),
+        title: const Text('Notificaciones'),
         actions: [
           IconButton(
             tooltip: 'Actualizar alertas',
@@ -78,7 +75,7 @@ class _NotificacionesPageState extends State<NotificacionesPage> {
       ),
       body: cargando
           ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF2E7D32)),
+              child: CircularProgressIndicator(color: AppColors.leaf),
             )
           : RefreshIndicator(onRefresh: _cargar, child: _contenido()),
     );
@@ -86,37 +83,31 @@ class _NotificacionesPageState extends State<NotificacionesPage> {
 
   Widget _contenido() {
     final actual = resultado;
+    if (actual != null && actual.alertas.isEmpty && actual.huboError) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: const EmptyStatePanel(
+              icon: Icons.cloud_off_outlined,
+              title: 'No se pudieron verificar las alertas',
+              message: 'Comprueba la conexión con el backend e inténtalo de nuevo.',
+            ),
+          ),
+        ],
+      );
+    }
     if (actual == null || actual.alertas.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           SizedBox(
             height: MediaQuery.of(context).size.height * 0.7,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.notifications_none,
-                    size: 70,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 15),
-                  Text(
-                    'No hay alertas activas',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Aquí aparecerán las alertas de tu sector.',
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                  ),
-                ],
-              ),
+            child: const EmptyStatePanel(
+              icon: Icons.notifications_none,
+              title: 'No hay alertas activas',
+              message: 'Aquí aparecerán las alertas y recordatorios de tu sector.',
             ),
           ),
         ],
@@ -156,7 +147,7 @@ class _NotificacionesPageState extends State<NotificacionesPage> {
   Widget _tarjetaAlerta(AlertaRiego alerta) {
     final (icon, color) = switch (alerta.tipo) {
       'humedad' => (Icons.water_drop_outlined, const Color(0xFF1565C0)),
-      'bomba' => (Icons.water, const Color(0xFF2E7D32)),
+      'bomba' => (Icons.water, AppColors.leaf),
       'temperatura' => (Icons.thermostat, const Color(0xFFE65100)),
       'recordatorio' => (Icons.alarm, const Color(0xFF6A1B9A)),
       _ => (Icons.notifications_active_outlined, const Color(0xFF616161)),
@@ -177,6 +168,7 @@ class _NotificacionesPageState extends State<NotificacionesPage> {
                   builder: (_) => CasoDetallePage(
                     token: widget.token,
                     idCaso: alerta.idCaso!,
+                    idRecordatorioInicio: alerta.idRecordatorio,
                   ),
                 ),
               ),
@@ -241,7 +233,7 @@ class _NotificacionesPageState extends State<NotificacionesPage> {
                   onPressed: () => _cerrarRecordatorio(alerta),
                   icon: const Icon(
                     Icons.check_circle_outline,
-                    color: Color(0xFF2E7D32),
+                    color: AppColors.leaf,
                   ),
                 ),
             ],

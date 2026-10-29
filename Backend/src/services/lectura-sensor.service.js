@@ -1,137 +1,66 @@
 const pool = require('../config/database');
 
-const crearLectura = async (
-    idSensor,
-    valor,
-    unidad,
-    fechaHora
-) => {
-
+const crearLectura = async (idUsuario, idSensor, valor, unidad, fechaHora = null) => {
     const result = await pool.query(`
         INSERT INTO SISTEMA_RIEGO.lectura_sensor
-        (
-            id_sensor,
-            valor,
-            unidad,
-            fecha_hora
-        )
-        VALUES ($1, $2, $3, $4)
-        RETURNING
-            id_lectura,
-            id_sensor,
-            valor,
-            unidad,
-            fecha_hora
-    `, [
-        idSensor,
-        valor,
-        unidad,
-        fechaHora
-    ]);
-
-    const lectura = result.rows[0];
-
-    const configuracion = await pool.query(`
-        SELECT
-            s.id_sector,
-            c.humedad_minima,
-            c.humedad_maxima,
-            c.modo_automatico,
-            a.id_actuador,
-            a.codigo AS actuador,
-            a.estado AS estado_actuador
+            (id_sensor, valor, unidad, fecha_hora)
+        SELECT s.id_sensor, $3, $4, COALESCE($5::timestamp, CURRENT_TIMESTAMP)
         FROM SISTEMA_RIEGO.sensor s
-        JOIN SISTEMA_RIEGO.configuracion_riego c
-            ON c.id_sector = s.id_sector
-        JOIN SISTEMA_RIEGO.actuador a
-            ON a.id_sector = s.id_sector
-        WHERE s.id_sensor = $1
-        AND s.estado = 'ACTIVO'
-        LIMIT 1
-    `, [idSensor]);
+        JOIN SISTEMA_RIEGO.sector sec ON sec.id_sector = s.id_sector
+        JOIN SISTEMA_RIEGO.jardin j ON j.id_jardin = sec.id_jardin
+        WHERE s.id_sensor = $1 AND j.id_usuario = $2
+        RETURNING id_lectura, id_sensor, valor, unidad, fecha_hora
+    `, [idSensor, idUsuario, valor, unidad, fechaHora]);
 
-    if (configuracion.rows.length === 0) {
-
-        return {
-            lectura,
-            automatizacion: {
-                necesita_riego: false,
-                accion: 'NINGUNA',
-                motivo: 'No existe configuración de riego para el sector'
-            }
-        };
-    }
-
-    const datos = configuracion.rows[0];
-
-    let necesitaRiego = false;
-    let accion = 'NINGUNA';
-
-    if (
-        datos.modo_automatico === true &&
-        Number(valor) < Number(datos.humedad_minima)
-    ) {
-        necesitaRiego = true;
-        accion = 'ACTIVAR';
-    }
-
-    return {
-        lectura,
-        automatizacion: {
-            necesita_riego: necesitaRiego,
-            accion,
-            actuador: datos.actuador,
-            estado_actuador: datos.estado_actuador,
-            humedad_minima: datos.humedad_minima,
-            humedad_maxima: datos.humedad_maxima,
-            modo_automatico: datos.modo_automatico
-        }
-    };
+    return result.rows[0] || null;
 };
 
-
-const obtenerLecturasPorSensor = async (idSensor) => {
-
+const obtenerLecturasPorSensor = async (idUsuario, idSensor) => {
     const result = await pool.query(`
-        SELECT
-            id_lectura,
-            id_sensor,
-            valor,
-            unidad,
-            fecha_hora
-        FROM SISTEMA_RIEGO.lectura_sensor
-        WHERE id_sensor = $1
-        ORDER BY fecha_hora DESC
-    `, [idSensor]);
-
+        SELECT ls.id_lectura, ls.id_sensor, ls.valor, ls.unidad, ls.fecha_hora
+        FROM SISTEMA_RIEGO.lectura_sensor ls
+        JOIN SISTEMA_RIEGO.sensor s ON s.id_sensor = ls.id_sensor
+        JOIN SISTEMA_RIEGO.sector sec ON sec.id_sector = s.id_sector
+        JOIN SISTEMA_RIEGO.jardin j ON j.id_jardin = sec.id_jardin
+        WHERE ls.id_sensor = $1 AND j.id_usuario = $2
+        ORDER BY ls.fecha_hora DESC
+    `, [idSensor, idUsuario]);
+    if (result.rows.length === 0) {
+        const owner = await pool.query(`
+            SELECT 1 FROM SISTEMA_RIEGO.sensor s
+            JOIN SISTEMA_RIEGO.sector sec ON sec.id_sector = s.id_sector
+            JOIN SISTEMA_RIEGO.jardin j ON j.id_jardin = sec.id_jardin
+            WHERE s.id_sensor = $1 AND j.id_usuario = $2
+        `, [idSensor, idUsuario]);
+        if (owner.rows.length === 0) return null;
+    }
     return result.rows;
 };
 
-const obtenerUltimasLecturasPorSector = async (idSector) => {
-
+const obtenerUltimasLecturasPorSector = async (idUsuario, idSector) => {
     const result = await pool.query(`
         SELECT DISTINCT ON (s.id_sensor)
-            s.id_sensor,
-            s.codigo,
-            ts.nombre AS tipo_sensor,
-            ls.valor,
-            ls.unidad,
-            ls.fecha_hora
+            s.id_sensor, s.codigo, ts.nombre AS tipo_sensor,
+            ls.valor, ls.unidad, ls.fecha_hora
         FROM SISTEMA_RIEGO.sensor s
-        JOIN SISTEMA_RIEGO.tipo_sensor ts
-            ON ts.id_tipo_sensor = s.id_tipo_sensor
-        JOIN SISTEMA_RIEGO.lectura_sensor ls
-            ON ls.id_sensor = s.id_sensor
-        WHERE s.id_sector = $1
-        AND s.estado = 'ACTIVO'
+        JOIN SISTEMA_RIEGO.tipo_sensor ts ON ts.id_tipo_sensor = s.id_tipo_sensor
+        JOIN SISTEMA_RIEGO.lectura_sensor ls ON ls.id_sensor = s.id_sensor
+        JOIN SISTEMA_RIEGO.sector sec ON sec.id_sector = s.id_sector
+        JOIN SISTEMA_RIEGO.jardin j ON j.id_jardin = sec.id_jardin
+        WHERE s.id_sector = $1 AND j.id_usuario = $2 AND s.estado = 'ACTIVO'
         ORDER BY s.id_sensor, ls.fecha_hora DESC
-    `, [idSector]);
+    `, [idSector, idUsuario]);
 
-    return result.rows;
+    const owner = await pool.query(`
+        SELECT 1 FROM SISTEMA_RIEGO.sector sec
+        JOIN SISTEMA_RIEGO.jardin j ON j.id_jardin = sec.id_jardin
+        WHERE sec.id_sector = $1 AND j.id_usuario = $2
+    `, [idSector, idUsuario]);
+    return owner.rows.length ? result.rows : null;
 };
 
 module.exports = {
     crearLectura,
     obtenerLecturasPorSensor,
     obtenerUltimasLecturasPorSector
-};  
+};

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'actuador_configuracion_service.dart';
 import 'caso_service.dart';
 import 'lectura_sensor_service.dart';
+import 'recordatorio_caso.dart';
 
 class AlertaRiego {
   final String titulo;
@@ -29,10 +30,12 @@ class AlertaRiego {
 class ResultadoNotificaciones {
   final List<AlertaRiego> alertas;
   final bool usaDatosDeEjemplo;
+  final bool huboError;
 
   const ResultadoNotificaciones({
     required this.alertas,
     this.usaDatosDeEjemplo = false,
+    this.huboError = false,
   });
 }
 
@@ -48,15 +51,14 @@ class NotificacionService {
     List<dynamic> lecturas = [];
     List<dynamic> actuadores = [];
     List<dynamic> recordatorios = [];
-    var pudoConsultarBackend = false;
-
+    var huboError = false;
     try {
       lecturas = await LecturaSensorService.obtenerUltimasLecturasPorSector(
         token: token,
         idSector: idSector,
       ).timeout(_timeout);
-      pudoConsultarBackend = true;
     } catch (error) {
+      huboError = true;
       debugPrint('No se pudieron consultar lecturas para alertas: $error');
     }
 
@@ -65,8 +67,8 @@ class NotificacionService {
         token: token,
         idSector: idSector,
       ).timeout(_timeout);
-      pudoConsultarBackend = true;
     } catch (error) {
+      huboError = true;
       debugPrint('No se pudieron consultar actuadores para alertas: $error');
     }
 
@@ -74,32 +76,31 @@ class NotificacionService {
       recordatorios = await CasoService.obtenerRecordatoriosActivos(
         token: token,
       ).timeout(_timeout);
-      pudoConsultarBackend = true;
     } catch (error) {
+      huboError = true;
       debugPrint('No se pudieron consultar recordatorios: $error');
     }
 
-    if (lecturas.isEmpty && actuadores.isEmpty && recordatorios.isEmpty) {
-      return ResultadoNotificaciones(
-        alertas: _alertasDeEjemplo(),
-        usaDatosDeEjemplo: true,
-      );
-    }
-
     final alertas = <AlertaRiego>[];
-    for (final recordatorio in recordatorios) {
-      if (recordatorio is! Map) continue;
+    final recordatoriosMap = RecordatorioCasoHelper.unicosPorId(
+      recordatorios.whereType<Map>().map(
+        (recordatorio) => Map<String, dynamic>.from(recordatorio),
+      ),
+    );
+    for (final recordatorio in recordatoriosMap) {
       final idCaso = int.tryParse(recordatorio['id_caso']?.toString() ?? '');
       final idRecordatorio = int.tryParse(
         recordatorio['id_recordatorio']?.toString() ?? '',
       );
       final planta = recordatorio['nombre_planta']?.toString();
-      final sector = recordatorio['nombre_sector']?.toString();
+      final paso = recordatorio['tarea_descripcion']?.toString() ?? '';
+      final fecha = _fecha(recordatorio['fecha_recordatorio']);
       final contexto =
           [
-                recordatorio['titulo_caso'],
-                if (planta != null && planta.isNotEmpty) planta,
-                if (sector != null && sector.isNotEmpty) 'Sector $sector',
+                if (planta != null && planta.isNotEmpty) planta else recordatorio['titulo_caso'],
+                if (paso.isNotEmpty) paso,
+                if (recordatorio['nombre_sector'] != null)
+                  'Sector ${recordatorio['nombre_sector']}',
               ]
               .where((value) => value != null && value.toString().isNotEmpty)
               .join(' · ');
@@ -108,11 +109,17 @@ class NotificacionService {
           titulo:
               recordatorio['mensaje']?.toString() ??
               'Recordatorio de recuperación',
-          mensaje: contexto.isEmpty
-              ? 'Seguimiento programado para un caso de recuperación.'
-              : contexto,
+          mensaje: planta == null || planta.isEmpty
+              ? (contexto.isEmpty
+                    ? 'Seguimiento programado para un caso de recuperación.'
+                    : contexto)
+              : RecordatorioCasoHelper.mensaje(
+                  planta: planta,
+                  paso: paso,
+                  fecha: fecha,
+                ),
           tipo: 'recordatorio',
-          fecha: _fecha(recordatorio['fecha_recordatorio']),
+          fecha: fecha,
           idCaso: idCaso,
           idRecordatorio: idRecordatorio,
           esRecordatorio: true,
@@ -166,14 +173,16 @@ class NotificacionService {
       );
     }
 
-    alertas.sort((a, b) => b.fecha.compareTo(a.fecha));
-    if (!pudoConsultarBackend && alertas.isEmpty) {
-      return ResultadoNotificaciones(
-        alertas: _alertasDeEjemplo(),
-        usaDatosDeEjemplo: true,
-      );
-    }
-    return ResultadoNotificaciones(alertas: alertas);
+    alertas.sort((a, b) {
+      if (a.esRecordatorio && b.esRecordatorio) {
+        return a.fecha.compareTo(b.fecha);
+      }
+      if (a.esRecordatorio != b.esRecordatorio) {
+        return a.esRecordatorio ? -1 : 1;
+      }
+      return b.fecha.compareTo(a.fecha);
+    });
+    return ResultadoNotificaciones(alertas: alertas, huboError: huboError);
   }
 
   static bool _estaEncendido(dynamic estado) {
@@ -192,30 +201,4 @@ class NotificacionService {
       ? value.toInt().toString()
       : value.toStringAsFixed(1);
 
-  static List<AlertaRiego> _alertasDeEjemplo() {
-    final ahora = DateTime.now();
-    return [
-      AlertaRiego(
-        titulo: 'Humedad del suelo baja',
-        mensaje: 'La humedad está por debajo del nivel recomendado. Revisa el riego.',
-        tipo: 'humedad',
-        fecha: ahora.subtract(const Duration(minutes: 12)),
-        esEjemplo: true,
-      ),
-      AlertaRiego(
-        titulo: 'Bomba de riego activada',
-        mensaje: 'El sistema inició un ciclo de riego en el sector.',
-        tipo: 'bomba',
-        fecha: ahora.subtract(const Duration(hours: 1)),
-        esEjemplo: true,
-      ),
-      AlertaRiego(
-        titulo: 'Temperatura alta',
-        mensaje: 'La temperatura superó el rango recomendado para las plantas.',
-        tipo: 'temperatura',
-        fecha: ahora.subtract(const Duration(hours: 3)),
-        esEjemplo: true,
-      ),
-    ];
-  }
 }

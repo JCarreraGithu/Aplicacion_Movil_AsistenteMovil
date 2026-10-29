@@ -1,10 +1,33 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/caso_service.dart';
+import '../services/caso_contexto.dart';
+import '../services/diagnostico_presentacion.dart';
+import '../services/avance_flow.dart';
+import '../widgets/app_components.dart';
 import 'asistente_page.dart';
 
-const Color _verde = Color(0xFF2E7D32);
-const Color _fondo = Color(0xFFF5F7F5);
+const Color _verde = AppColors.leaf;
+const Color _fondo = AppColors.background;
+
+String _etiquetaEstado(String estado) {
+  switch (estado) {
+    case 'abierto':
+      return 'Abierto';
+    case 'en_progreso':
+      return 'En progreso';
+    case 'resuelto':
+      return 'Resuelto';
+    case 'abandonado':
+      return 'Abandonado';
+    default:
+      return estado;
+  }
+}
 
 // ================================================================
 // LISTA DE CASOS
@@ -65,21 +88,6 @@ class _CasosPageState extends State<CasosPage> {
     }
   }
 
-  String _etiquetaEstado(String estado) {
-    switch (estado) {
-      case 'abierto':
-        return 'Abierto';
-      case 'en_progreso':
-        return 'En progreso';
-      case 'resuelto':
-        return 'Resuelto';
-      case 'abandonado':
-        return 'Abandonado';
-      default:
-        return estado;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -106,32 +114,12 @@ class _CasosPageState extends State<CasosPage> {
             : _casos.isEmpty
             ? ListView(
                 children: [
-                  const SizedBox(height: 100),
-                  Icon(
-                    Icons.healing_outlined,
-                    size: 70,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 15),
-                  Center(
-                    child: Text(
-                      'No tienes casos abiertos',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      'Cuando el asistente detecte un problema en\nuna planta, podrás abrir un caso para darle\nseguimiento.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade500,
-                      ),
+                  const SizedBox(
+                    height: 420,
+                    child: EmptyStatePanel(
+                      icon: Icons.healing_outlined,
+                      title: 'Aún no hay casos de seguimiento',
+                      message: 'Cuando registres una planta que necesita atención, podrás seguir aquí su evolución.',
                     ),
                   ),
                 ],
@@ -207,8 +195,14 @@ class _CasosPageState extends State<CasosPage> {
 class CasoDetallePage extends StatefulWidget {
   final String token;
   final int idCaso;
+  final int? idRecordatorioInicio;
 
-  const CasoDetallePage({super.key, required this.token, required this.idCaso});
+  const CasoDetallePage({
+    super.key,
+    required this.token,
+    required this.idCaso,
+    this.idRecordatorioInicio,
+  });
 
   @override
   State<CasoDetallePage> createState() => _CasoDetallePageState();
@@ -220,6 +214,13 @@ class _CasoDetallePageState extends State<CasoDetallePage> {
   final _notaController = TextEditingController();
   bool _enviandoNota = false;
   bool _guardandoTarea = false;
+  bool _mostrarDiagnosticoCompleto = false;
+  XFile? _imagenAvance;
+  Uint8List? _imagenAvanceBytes;
+  int? _recordatorioSeleccionado;
+  int? _tareaEvaluadaSeleccionada;
+  bool _inicioRecordatorioProcesado = false;
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
@@ -240,23 +241,29 @@ class _CasoDetallePageState extends State<CasoDetallePage> {
         token: widget.token,
         idCaso: widget.idCaso,
       );
+      if (!mounted) return;
       setState(() {
         _caso = caso;
         _cargando = false;
       });
-    } catch (e) {
-      setState(() => _cargando = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error al cargar el caso')),
-        );
+      final idInicio = widget.idRecordatorioInicio;
+      if (!_inicioRecordatorioProcesado && idInicio != null) {
+        _inicioRecordatorioProcesado = true;
+        final recordatorio = _recordatorioPorId(idInicio);
+        if (recordatorio != null) _iniciarAvanceDesdeRecordatorio(recordatorio);
       }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _cargando = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Error al cargar el caso')));
     }
   }
 
   Future<void> _agregarSeguimiento() async {
     final nota = _notaController.text.trim();
-    if (nota.isEmpty) return;
+    if (nota.isEmpty || _enviandoNota) return;
 
     setState(() => _enviandoNota = true);
     try {
@@ -264,8 +271,18 @@ class _CasoDetallePageState extends State<CasoDetallePage> {
         token: widget.token,
         idCaso: widget.idCaso,
         nota: nota,
+        imagenBytes: _imagenAvanceBytes,
+        nombreImagen: _imagenAvance?.name,
+        idRecordatorio: _recordatorioSeleccionado,
       );
+      if (!mounted) return;
       _notaController.clear();
+      setState(() {
+        _imagenAvance = null;
+        _imagenAvanceBytes = null;
+        _recordatorioSeleccionado = null;
+        _tareaEvaluadaSeleccionada = null;
+      });
       await _cargarCaso();
     } catch (e) {
       if (mounted) {
@@ -274,8 +291,400 @@ class _CasoDetallePageState extends State<CasoDetallePage> {
         );
       }
     } finally {
-      setState(() => _enviandoNota = false);
+      if (mounted) setState(() => _enviandoNota = false);
     }
+  }
+
+  Future<void> _guardarYConsultarIA() async {
+    final nota = _notaController.text.trim();
+    if (nota.isEmpty || _enviandoNota) return;
+    final imagen = _imagenAvance;
+    final bytes = _imagenAvanceBytes;
+    final recordatorioId = _recordatorioSeleccionado;
+    final tareaEvaluadaId = _tareaEvaluadaSeleccionada;
+    final recordatorio = recordatorioId == null
+        ? null
+        : _recordatorioPorId(recordatorioId);
+    final tareaEvaluada = _tareaPorId(tareaEvaluadaId);
+    var avanceGuardado = false;
+    int? idSeguimientoGuardado;
+    setState(() => _enviandoNota = true);
+    try {
+      await guardarAntesDeConsultar(
+        guardar: () async {
+          final seguimiento = await CasoService.agregarSeguimiento(
+            token: widget.token,
+            idCaso: widget.idCaso,
+            nota: nota,
+            imagenBytes: bytes,
+            nombreImagen: imagen?.name,
+            idRecordatorio: recordatorioId,
+          );
+          avanceGuardado = true;
+          idSeguimientoGuardado =
+              int.tryParse(seguimiento['id_seguimiento']?.toString() ?? '');
+        },
+        consultar: () async {
+          if (!mounted) return;
+          _notaController.clear();
+          setState(() {
+            _imagenAvance = null;
+            _imagenAvanceBytes = null;
+            _recordatorioSeleccionado = null;
+            _tareaEvaluadaSeleccionada = null;
+          });
+          final actualizado = await CasoService.obtenerCasoPorId(
+            token: widget.token,
+            idCaso: widget.idCaso,
+          );
+          if (!mounted) return;
+          setState(() => _caso = actualizado);
+          final contexto = construirContextoCaso(
+            actualizado,
+            seguimientoConFotoIncluida: bytes == null
+                ? null
+                : idSeguimientoGuardado,
+            recordatorioEnEvaluacionId: recordatorioId,
+            tareaEnEvaluacionId: tareaEvaluadaId,
+          );
+          final paso = recordatorio?['tarea_descripcion']?.toString() ??
+              tareaEvaluada?['descripcion']?.toString();
+          final fecha = recordatorio?['fecha_recordatorio']?.toString() ??
+              tareaEvaluada?['fecha_limite']?.toString();
+          final seguimientoProgramado = recordatorioId != null || tareaEvaluada != null;
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AsistentePage(
+                token: widget.token,
+                preguntaInicial: !seguimientoProgramado
+                    ? 'Analiza el nuevo avance guardado y la evolución completa del caso. Indica si la observación cambia la evaluación o requiere ajustar el plan. No recomiendes cambios sin fundamento.'
+                    : 'Evalúa el seguimiento programado${paso == null ? '' : ' para el paso: $paso'}${fecha == null ? '' : ' (fecha: $fecha)'}. Considera la nueva observación y la evolución completa. Puedes recomendar continuar, ajustar o finalizar el tratamiento, pero presenta los cambios como propuestas para confirmar por el usuario. No cierres el caso.',
+                contextoCaso: contexto,
+                imagenInicialCaso: imagen,
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              avanceGuardado
+                  ? 'El avance quedó guardado, pero no se pudo abrir la consulta IA: $e'
+                  : 'No se guardó el avance; no se consultó a la IA: $e',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _enviandoNota = false);
+    }
+  }
+
+  void _iniciarAvanceDesdeRecordatorio(Map<String, dynamic> recordatorio) {
+    if (recordatorio['activo'] != true || _enviandoNota) return;
+    final estadoCaso = _caso?['estado']?.toString();
+    if (estadoCaso == 'resuelto' || estadoCaso == 'abandonado') return;
+    final id = int.tryParse(recordatorio['id_recordatorio']?.toString() ?? '');
+    final idTarea = int.tryParse(recordatorio['id_tarea']?.toString() ?? '');
+    setState(() {
+      _recordatorioSeleccionado = id;
+      _tareaEvaluadaSeleccionada = idTarea;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(id == null
+            ? 'Describe el avance del paso: ${recordatorio['tarea_descripcion'] ?? 'seguimiento'}.'
+            : 'Describe cómo respondió la planta al seguimiento.'),
+      ),
+    );
+  }
+
+  Map<String, dynamic>? _recordatorioPorId(int id) {
+    for (final value in _caso?['recordatorios'] as List<dynamic>? ?? []) {
+      if (value is Map &&
+          value['id_recordatorio']?.toString() == id.toString()) {
+        return Map<String, dynamic>.from(value);
+      }
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _tareaPorId(int? id) {
+    if (id == null) return null;
+    for (final value in _caso?['tareas'] as List<dynamic>? ?? []) {
+      if (value is Map && value['id_tarea']?.toString() == id.toString()) {
+        return Map<String, dynamic>.from(value);
+      }
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _recordatorioProximo(
+    List<dynamic> recordatorios,
+    List<dynamic> tareas,
+  ) {
+    final activos = recordatorios
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .where((value) => value['activo'] == true)
+        .where((value) => DateTime.tryParse(
+              value['fecha_recordatorio']?.toString() ?? '',
+            ) != null)
+        .toList();
+    final tareasConRecordatorio = activos
+        .map((item) => item['id_tarea']?.toString())
+        .whereType<String>()
+        .toSet();
+    for (final value in tareas) {
+      if (value is! Map) continue;
+      final tarea = Map<String, dynamic>.from(value);
+      final idTarea = tarea['id_tarea']?.toString();
+      final fecha = tarea['fecha_limite']?.toString();
+      if (tarea['completada'] == true ||
+          fecha == null ||
+          DateTime.tryParse(fecha) == null ||
+          tareasConRecordatorio.contains(idTarea)) {
+        continue;
+      }
+      activos.add({
+        'id_tarea': idTarea,
+        'tarea_descripcion': tarea['descripcion']?.toString() ?? '',
+        'fecha_recordatorio': fecha,
+        'mensaje': 'Seguimiento pendiente del paso',
+        'activo': true,
+      });
+    }
+    activos.sort((a, b) => DateTime.parse(
+      a['fecha_recordatorio'].toString(),
+    ).compareTo(DateTime.parse(b['fecha_recordatorio'].toString())));
+    return activos.isEmpty ? null : activos.first;
+  }
+
+  String _fechaRecordatorio(Object? valor) {
+    final fecha = DateTime.tryParse(valor?.toString() ?? '')?.toLocal();
+    if (fecha == null) return 'Fecha no disponible';
+    String dos(int numero) => numero.toString().padLeft(2, '0');
+    return '${dos(fecha.day)}/${dos(fecha.month)}/${fecha.year} · ${dos(fecha.hour)}:${dos(fecha.minute)}';
+  }
+
+  Future<void> _seleccionarImagen() async {
+    final origen = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Elegir de la galería'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Tomar una foto'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (origen == null) return;
+    try {
+      final imagen = await _imagePicker.pickImage(
+        source: origen,
+        imageQuality: 85,
+        maxWidth: 1800,
+      );
+      if (imagen == null) return;
+      final bytes = await imagen.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _imagenAvance = imagen;
+        _imagenAvanceBytes = bytes;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo seleccionar la fotografía.'),
+          ),
+        );
+      }
+    }
+  }
+
+  String _urlImagen(String ruta) =>
+      Uri.parse(CasoService.baseUrl).resolve(ruta).toString();
+
+  String? _resultadoFinal(List<dynamic> seguimientos) {
+    for (final value in seguimientos.reversed) {
+      final nota = Map<String, dynamic>.from(value as Map)['nota']?.toString() ?? '';
+      const prefijo = 'Resultado final:';
+      if (nota.startsWith(prefijo)) return nota.substring(prefijo.length).trim();
+    }
+    return null;
+  }
+
+  String _fechaHoraBitacora(Object? valor) {
+    final fecha = DateTime.tryParse(valor?.toString() ?? '');
+    if (fecha == null) return valor?.toString() ?? '';
+    final local = fecha.toLocal();
+    String dos(int numero) => numero.toString().padLeft(2, '0');
+    return '${dos(local.day)}/${dos(local.month)}/${local.year} · ${dos(local.hour)}:${dos(local.minute)}';
+  }
+
+  Widget _diagnostico(String texto) {
+    final expandible = DiagnosticoPresentacion.necesitaExpandir(texto);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '🔍 Diagnóstico',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            DiagnosticoPresentacion.textoVisible(
+              texto,
+              expandido: _mostrarDiagnosticoCompleto,
+            ),
+            maxLines: _mostrarDiagnosticoCompleto ? null : 3,
+            overflow: _mostrarDiagnosticoCompleto
+                ? TextOverflow.visible
+                : TextOverflow.ellipsis,
+          ),
+          if (expandible)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => setState(
+                  () => _mostrarDiagnosticoCompleto =
+                      !_mostrarDiagnosticoCompleto,
+                ),
+                child: Text(
+                  _mostrarDiagnosticoCompleto
+                      ? 'Ver menos'
+                      : 'Ver diagnóstico completo',
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _mostrarImagenCompleta(String url) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: MediaQuery.sizeOf(context).width * 0.9,
+          height: MediaQuery.sizeOf(context).height * 0.85,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Center(
+                child: InteractiveViewer(
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.white,
+                      size: 48,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 4,
+                right: 4,
+                child: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tarjetaProximoSeguimiento(
+    Map<String, dynamic> recordatorio,
+    Map<String, dynamic> caso,
+  ) {
+    final planta = caso['nombre_planta']?.toString().trim().isNotEmpty == true
+        ? caso['nombre_planta'].toString()
+        : 'la planta';
+    final fecha = DateTime.tryParse(
+      recordatorio['fecha_recordatorio']?.toString() ?? '',
+    );
+    final tarea = recordatorio['tarea_descripcion']?.toString() ?? '';
+    final tareas = caso['tareas'] as List<dynamic>? ?? [];
+    final idTarea = recordatorio['id_tarea']?.toString();
+    final descripcionTarea = tarea.isNotEmpty
+        ? tarea
+        : tareas.whereType<Map>().map((item) => Map<String, dynamic>.from(item))
+            .where((item) => item['id_tarea']?.toString() == idTarea)
+            .map((item) => item['descripcion']?.toString() ?? '')
+            .firstWhere((item) => item.isNotEmpty, orElse: () => '');
+    final ahora = DateTime.now();
+    final estado = fecha == null
+        ? 'Fecha programada no disponible'
+        : fecha.isBefore(ahora)
+            ? 'Seguimiento pendiente desde ${_fechaRecordatorio(fecha)}'
+            : fecha.year == ahora.year && fecha.month == ahora.month && fecha.day == ahora.day
+                ? 'Hoy · ${_fechaRecordatorio(fecha)}'
+                : 'Próximo · ${_fechaRecordatorio(fecha)}';
+    return Card(
+      color: const Color(0xFFEAF5EC),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Próximo seguimiento',
+              style: TextStyle(fontWeight: FontWeight.bold, color: _verde),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              fecha != null && fecha.year == ahora.year && fecha.month == ahora.month && fecha.day == ahora.day
+                  ? 'Hoy corresponde revisar la evolución de $planta. ¿Cómo ha respondido al tratamiento?'
+                  : 'Seguimiento programado para $planta.',
+            ),
+            if (descripcionTarea.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('Paso: $descripcionTarea'),
+            ],
+            const SizedBox(height: 4),
+            Text(estado, style: TextStyle(color: Colors.grey.shade700)),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _iniciarAvanceDesdeRecordatorio(recordatorio),
+                icon: const Icon(Icons.note_add_outlined),
+                label: const Text('Registrar avance'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _cambiarEstado(String estado) async {
@@ -295,19 +704,66 @@ class _CasoDetallePageState extends State<CasoDetallePage> {
     }
   }
 
+  Future<void> _confirmarCierre() async {
+    final resultadoController = TextEditingController();
+    final resultado = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirmar cierre del caso'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Registra el resultado observado. La IA no puede cerrar el caso.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: resultadoController,
+              autofocus: true,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Resultado final',
+                hintText: 'Describe cómo terminó la recuperación',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final texto = resultadoController.text.trim();
+              if (texto.isNotEmpty) Navigator.pop(dialogContext, texto);
+            },
+            child: const Text('Confirmar cierre'),
+          ),
+        ],
+      ),
+    );
+    resultadoController.dispose();
+    if (resultado == null) return;
+    try {
+      await CasoService.cerrarCasoConResultado(
+        token: widget.token,
+        idCaso: widget.idCaso,
+        resultado: resultado,
+      );
+      await _cargarCaso();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo cerrar el caso: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _consultarIA(Map<String, dynamic> caso) async {
-    final seguimientos = (caso['seguimientos'] as List<dynamic>? ?? [])
-        .map((s) => '- ${(s as Map)['fecha'] ?? ''}: ${s['nota'] ?? ''}')
-        .join('\n');
-    final contexto =
-        '''Caso: ${caso['titulo'] ?? 'Recuperación de planta'}
-Planta: ${caso['nombre_planta'] ?? 'Sin planta vinculada'}
-Jardín/sector: ${caso['nombre_jardin'] ?? ''} / ${caso['nombre_sector'] ?? 'Sin sector'}
-Estado actual: ${caso['estado'] ?? 'abierto'}
-Diagnóstico inicial: ${caso['diagnostico'] ?? ''}
-Plan de tratamiento: ${caso['plan_trabajo'] ?? ''}
-Evolución registrada:
-${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}''';
+    final contexto = construirContextoCaso(caso);
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -486,6 +942,90 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
     }
   }
 
+  Future<void> _editarRecordatorio(Map<String, dynamic> recordatorio) async {
+    final id = int.tryParse(recordatorio['id_recordatorio'].toString());
+    if (id == null) return;
+    final mensajeController = TextEditingController(
+      text: recordatorio['mensaje']?.toString() ?? '',
+    );
+    var fecha = DateTime.tryParse(
+          recordatorio['fecha_recordatorio']?.toString() ?? '',
+        )?.toLocal() ??
+        DateTime.now().add(const Duration(days: 1));
+    final cambios = await showDialog<(String, DateTime)?>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Modificar recordatorio'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: mensajeController,
+                decoration: const InputDecoration(labelText: 'Recordatorio'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.calendar_month),
+                label: Text('${fecha.day}/${fecha.month}/${fecha.year}'),
+                onPressed: () async {
+                  final elegida = await showDatePicker(
+                    context: context,
+                    initialDate: fecha,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+                  );
+                  if (elegida == null || !context.mounted) return;
+                  final hora = await showTimePicker(
+                    context: context,
+                    initialTime: TimeOfDay.fromDateTime(fecha),
+                  );
+                  if (hora == null) return;
+                  setDialogState(() {
+                    fecha = DateTime(elegida.year, elegida.month, elegida.day, hora.hour, hora.minute);
+                  });
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final mensaje = mensajeController.text.trim();
+                if (mensaje.isNotEmpty && fecha.isAfter(DateTime.now())) {
+                  Navigator.pop(dialogContext, (mensaje, fecha));
+                }
+              },
+              child: const Text('Guardar cambios'),
+            ),
+          ],
+        ),
+      ),
+    );
+    mensajeController.dispose();
+    if (cambios == null) return;
+    try {
+      await CasoService.actualizarRecordatorio(
+        token: widget.token,
+        idCaso: widget.idCaso,
+        idRecordatorio: id,
+        mensaje: cambios.$1,
+        fecha: cambios.$2,
+      );
+      await _cargarCaso();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo modificar el recordatorio: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_cargando) {
@@ -505,6 +1045,15 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
     final caso = _caso!;
     final estado = caso['estado'] as String;
     final seguimientos = caso['seguimientos'] as List<dynamic>;
+    final tareas = caso['tareas'] as List<dynamic>? ?? [];
+    final recordatorios = caso['recordatorios'] as List<dynamic>? ?? [];
+    final recordatorioProximo = _recordatorioProximo(recordatorios, tareas);
+    final planTrabajo = caso['plan_trabajo']?.toString().trim() ?? '';
+    final planGenerico = RegExp(
+      r'definir seguimiento y tratamiento recomendado|sin pasos de tratamiento registrados|no se requiere ningún plan de trabajo',
+      caseSensitive: false,
+    ).hasMatch(planTrabajo);
+    final resultadoFinal = _resultadoFinal(seguimientos);
     final cerrado = estado == 'resuelto' || estado == 'abandonado';
 
     return Scaffold(
@@ -526,7 +1075,27 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _bloque('🔍 Diagnóstico', caso['diagnostico']),
+                _bloque(
+                  '🌿 Planta y ubicación',
+                  '${caso['nombre_planta'] ?? 'Planta sin vincular'}\n'
+                  'Especie: ${caso['especie_nombre_comun'] ?? 'No registrada'}'
+                  '${caso['especie_nombre_cientifico'] == null ? '' : ' (${caso['especie_nombre_cientifico']})'}\n'
+                  'Jardín/sector: ${caso['nombre_jardin'] ?? 'No registrado'} / ${caso['nombre_sector'] ?? 'No registrado'}',
+                ),
+                const SizedBox(height: 10),
+                _bloque('Estado', _etiquetaEstado(estado)),
+                const SizedBox(height: 10),
+                _bloque('Problema registrado', caso['titulo']?.toString()),
+                const SizedBox(height: 10),
+                _diagnostico(caso['diagnostico']?.toString() ?? ''),
+                if (recordatorioProximo != null && !cerrado) ...[
+                  const SizedBox(height: 10),
+                  _tarjetaProximoSeguimiento(recordatorioProximo, caso),
+                ],
+                if (resultadoFinal != null && resultadoFinal.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _bloque('Resultado final', resultadoFinal),
+                ],
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   onPressed: () => _consultarIA(caso),
@@ -534,13 +1103,12 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
                   label: const Text('Consultar a la IA sobre este caso'),
                 ),
                 const SizedBox(height: 12),
-                _bloque('🌱 Plan de trabajo', caso['plan_trabajo']),
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     const Expanded(
                       child: Text(
-                        'Pasos del tratamiento',
+                        '🌱 Plan de trabajo',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
@@ -553,7 +1121,20 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
                     ),
                   ],
                 ),
-                ...((caso['tareas'] as List<dynamic>? ?? []).map((value) {
+                if (tareas.isEmpty && planTrabajo.isNotEmpty && !planGenerico)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(planTrabajo),
+                  )
+                else if (tareas.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'No hay pasos de tratamiento registrados para este caso.',
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                  ),
+                ...tareas.map((value) {
                   final tarea = Map<String, dynamic>.from(value as Map);
                   return CheckboxListTile(
                     contentPadding: EdgeInsets.zero,
@@ -568,11 +1149,14 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
                             : null,
                       ),
                     ),
+                    subtitle: tarea['fecha_limite'] == null
+                        ? null
+                        : Text('Plazo: ${_fechaRecordatorio(tarea['fecha_limite'])}'),
                     onChanged: cerrado
                         ? null
                         : (value) => _cambiarTarea(tarea, value ?? false),
                   );
-                })),
+                }),
                 const SizedBox(height: 14),
                 Row(
                   children: [
@@ -591,38 +1175,61 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
                     ),
                   ],
                 ),
-                ...((caso['recordatorios'] as List<dynamic>? ?? []).map((
-                  value,
-                ) {
+                ...(recordatorios.map((value) {
                   final recordatorio = Map<String, dynamic>.from(value as Map);
                   final activo = recordatorio['activo'] == true;
                   final idRecordatorio = int.tryParse(
                     recordatorio['id_recordatorio'].toString(),
                   );
                   return Card(
-                    child: ListTile(
-                      leading: Icon(
-                        activo ? Icons.alarm : Icons.alarm_off,
-                        color: activo ? _verde : Colors.grey,
-                      ),
-                      title: Text(
-                        recordatorio['mensaje']?.toString() ?? 'Recordatorio',
-                      ),
-                      subtitle: Text(
-                        recordatorio['fecha_recordatorio']
-                                ?.toString()
-                                .replaceFirst('T', ' ')
-                                .split('.')
-                                .first ??
-                            '',
-                      ),
-                      trailing: activo && idRecordatorio != null
-                          ? IconButton(
-                              icon: const Icon(Icons.check_circle_outline),
-                              onPressed: () =>
-                                  _cerrarRecordatorio(idRecordatorio),
-                            )
-                          : null,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          onTap: activo && !cerrado
+                              ? () => _iniciarAvanceDesdeRecordatorio(recordatorio)
+                              : null,
+                          leading: Icon(
+                            activo ? Icons.alarm : Icons.alarm_off,
+                            color: activo ? _verde : Colors.grey,
+                          ),
+                          title: Text(
+                            recordatorio['mensaje']?.toString() ?? 'Recordatorio',
+                          ),
+                          subtitle: Text(
+                            _fechaRecordatorio(recordatorio['fecha_recordatorio']),
+                          ),
+                          trailing: activo && idRecordatorio != null
+                              ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Modificar o posponer',
+                                      icon: const Icon(Icons.edit_outlined),
+                                      onPressed: cerrado
+                                          ? null
+                                          : () => _editarRecordatorio(recordatorio),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Cancelar recordatorio',
+                                      icon: const Icon(Icons.notifications_off_outlined),
+                                      onPressed: () =>
+                                          _cerrarRecordatorio(idRecordatorio),
+                                    ),
+                                  ],
+                                )
+                              : null,
+                        ),
+                        if (activo && !cerrado)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: () => _iniciarAvanceDesdeRecordatorio(recordatorio),
+                              icon: const Icon(Icons.note_add_outlined),
+                              label: const Text('Registrar avance de este seguimiento'),
+                            ),
+                          ),
+                      ],
                     ),
                   );
                 })),
@@ -640,21 +1247,103 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
                       style: TextStyle(color: Colors.grey.shade600),
                     ),
                   ),
-                ...seguimientos.map(
-                  (s) => Card(
+                ...seguimientos.map((s) {
+                  final idRecordatorioAvance = int.tryParse(
+                    s['id_recordatorio']?.toString() ?? '',
+                  );
+                  final recordatorioAvance = idRecordatorioAvance == null
+                      ? null
+                      : _recordatorioPorId(idRecordatorioAvance);
+                  final origenSeguimiento = idRecordatorioAvance == null
+                      ? 'OBSERVACIÓN'
+                      : 'SEGUIMIENTO · ${recordatorioAvance?['mensaje'] ?? 'recordatorio #$idRecordatorioAvance'}';
+                  final imagenRuta = s['imagen_url']?.toString();
+                  final imagenUrl = imagenRuta == null || imagenRuta.isEmpty
+                      ? null
+                      : _urlImagen(imagenRuta);
+                  return Card(
                     margin: const EdgeInsets.only(bottom: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: ListTile(
-                      leading: const Icon(Icons.notes, color: _verde),
-                      title: Text(s['nota'] ?? ''),
-                      subtitle: Text(
-                        (s['fecha'] ?? '').toString().split('T').first,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(right: 10, top: 2),
+                                child: Icon(Icons.notes, color: _verde),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '$origenSeguimiento · ${_fechaHoraBitacora(s['fecha'])}',
+                                      style: TextStyle(
+                                        color: _verde,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(s['nota'] ?? ''),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (imagenUrl != null) ...[
+                            const SizedBox(height: 12),
+                            Center(
+                              child: GestureDetector(
+                                onTap: () => _mostrarImagenCompleta(imagenUrl),
+                                child: Container(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 340,
+                                    maxHeight: 240,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Colors.black12,
+                                        blurRadius: 5,
+                                        offset: Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: Image.network(
+                                    imagenUrl,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        const SizedBox(
+                                          height: 100,
+                                          child: Center(
+                                            child: Icon(
+                                              Icons.broken_image_outlined,
+                                            ),
+                                          ),
+                                        ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                  ),
-                ),
+                  );
+                }),
                 const SizedBox(height: 90),
               ],
             ),
@@ -666,11 +1355,80 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
                 top: false,
                 child: Column(
                   children: [
+                    if (_recordatorioSeleccionado != null ||
+                        _tareaEvaluadaSeleccionada != null) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: InputChip(
+                          avatar: const Icon(Icons.alarm, size: 18),
+                          label: Text(
+                            _recordatorioSeleccionado != null
+                                ? 'Avance del seguimiento: ${_recordatorioPorId(_recordatorioSeleccionado!)?['mensaje'] ?? 'recordatorio'}'
+                                : 'Avance del paso: ${_tareaPorId(_tareaEvaluadaSeleccionada)?['descripcion'] ?? 'tarea'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onDeleted: () => setState(
+                            () {
+                              _recordatorioSeleccionado = null;
+                              _tareaEvaluadaSeleccionada = null;
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (_imagenAvanceBytes != null) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.memory(
+                                _imagenAvanceBytes!,
+                                width: 92,
+                                height: 72,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: GestureDetector(
+                                onTap: () => setState(() {
+                                  _imagenAvance = null;
+                                  _imagenAvanceBytes = null;
+                                }),
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.black54,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.close,
+                                    size: 16,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     Row(
                       children: [
+                        IconButton(
+                          tooltip: 'Adjuntar fotografía',
+                          onPressed: _enviandoNota ? null : _seleccionarImagen,
+                          icon: const Icon(Icons.add_a_photo, color: _verde),
+                        ),
                         Expanded(
                           child: TextField(
                             controller: _notaController,
+                            onChanged: (_) => setState(() {}),
                             decoration: InputDecoration(
                               hintText: 'Agregar avance del caso...',
                               filled: true,
@@ -686,20 +1444,43 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
                             ),
                           ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _enviandoNota ||
+                                    _notaController.text.trim().isEmpty
+                                ? null
+                                : _agregarSeguimiento,
+                            icon: const Icon(Icons.save_outlined),
+                            label: const Text('Guardar avance'),
+                          ),
+                        ),
                         const SizedBox(width: 8),
-                        IconButton.filled(
-                          style: IconButton.styleFrom(backgroundColor: _verde),
-                          onPressed: _enviandoNota ? null : _agregarSeguimiento,
-                          icon: _enviandoNota
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.send, color: Colors.white),
+                        Expanded(
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _verde,
+                            ),
+                            onPressed: _enviandoNota ||
+                                    _notaController.text.trim().isEmpty
+                                ? null
+                                : _guardarYConsultarIA,
+                            icon: _enviandoNota
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.smart_toy_outlined),
+                            label: const Text('Guardar y consultar IA'),
+                          ),
                         ),
                       ],
                     ),
@@ -720,8 +1501,8 @@ ${seguimientos.isEmpty ? 'Todavía no hay notas de evolución.' : seguimientos}'
                               backgroundColor: _verde,
                               foregroundColor: Colors.white,
                             ),
-                            onPressed: () => _cambiarEstado('resuelto'),
-                            child: const Text('Marcar resuelto'),
+                            onPressed: _confirmarCierre,
+                            child: const Text('Cerrar caso y registrar resultado'),
                           ),
                         ),
                       ],

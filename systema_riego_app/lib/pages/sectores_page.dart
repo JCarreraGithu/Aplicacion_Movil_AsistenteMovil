@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import '../services/jardin_service.dart';
 
 class SectoresPage extends StatefulWidget {
@@ -57,7 +58,7 @@ class _SectoresPageState extends State<SectoresPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F5),
+      backgroundColor: AppColors.background,
 
       appBar: AppBar(
         title: Text(
@@ -79,7 +80,7 @@ class _SectoresPageState extends State<SectoresPage> {
     if (cargando) {
       return const Center(
         child: CircularProgressIndicator(
-          color: Color(0xFF2E7D32),
+          color: AppColors.leaf,
         ),
       );
     }
@@ -176,13 +177,13 @@ class _SectoresPageState extends State<SectoresPage> {
             height: 55,
 
             decoration: BoxDecoration(
-              color: const Color(0xFFE8F5E9),
+              color: AppColors.mint,
               borderRadius: BorderRadius.circular(16),
             ),
 
             child: const Icon(
               Icons.grass,
-              color: Color(0xFF2E7D32),
+              color: AppColors.leaf,
               size: 30,
             ),
           ),

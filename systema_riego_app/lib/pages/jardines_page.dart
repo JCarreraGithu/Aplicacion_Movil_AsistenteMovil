@@ -2,19 +2,20 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+
+import '../theme/app_theme.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../services/jardin_service.dart';
+import '../widgets/app_components.dart';
 import 'asistente_page.dart';
 
 class JardinesPage extends StatefulWidget {
   final String token;
 
-  const JardinesPage({
-    super.key,
-    required this.token,
-  });
+  const JardinesPage({super.key, required this.token});
 
   @override
   State<JardinesPage> createState() => _JardinesPageState();
@@ -39,7 +40,7 @@ class _JardinesPageState extends State<JardinesPage> {
   // ============================================================
 
   final TextEditingController nombrePersonalizadoController =
-  TextEditingController();
+      TextEditingController();
 
   // ============================================================
   // JARDINES
@@ -144,15 +145,11 @@ class _JardinesPageState extends State<JardinesPage> {
   // ============================================================
 
   Future<void> abrirJardin(dynamic jardin) async {
-    final int idJardin = int.parse(
-      jardin['id_jardin'].toString(),
-    );
+    final int idJardin = int.parse(jardin['id_jardin'].toString());
 
-    final String nombre =
-        jardin['nombre']?.toString() ?? 'Jardín sin nombre';
+    final String nombre = jardin['nombre']?.toString() ?? 'Jardín sin nombre';
 
-    final String ubicacion =
-        jardin['ubicacion']?.toString() ?? 'Sin ubicación';
+    final String ubicacion = jardin['ubicacion']?.toString() ?? 'Sin ubicación';
 
     setState(() {
       jardinSeleccionado = idJardin;
@@ -173,21 +170,19 @@ class _JardinesPageState extends State<JardinesPage> {
 
   Future<void> cargarPlantasDelJardin(int idJardin) async {
     try {
-      final response = await http.get(
-        Uri.parse(
-          '$baseUrl/jardines/$idJardin/sectores',
-        ),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-        },
-      ).timeout(
-        _timeoutCorto,
-        onTimeout: () {
-          throw Exception(
-            'El servidor no respondió a tiempo al cargar sectores (timeout).',
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/jardines/$idJardin/sectores'),
+            headers: {'Authorization': 'Bearer ${widget.token}'},
+          )
+          .timeout(
+            _timeoutCorto,
+            onTimeout: () {
+              throw Exception(
+                'El servidor no respondió a tiempo al cargar sectores (timeout).',
+              );
+            },
           );
-        },
-      );
 
       debugPrint('====================================');
       debugPrint('SECTORES DEL JARDÍN');
@@ -196,59 +191,48 @@ class _JardinesPageState extends State<JardinesPage> {
       debugPrint('====================================');
 
       if (response.statusCode != 200) {
-        throw Exception(
-          'No se pudieron cargar los sectores.',
-        );
+        throw Exception('No se pudieron cargar los sectores.');
       }
 
       final data = jsonDecode(response.body);
 
       if (data is! List) {
-        throw Exception(
-          'La respuesta de sectores no es válida.',
-        );
+        throw Exception('La respuesta de sectores no es válida.');
       }
 
       final List<dynamic> todasLasPlantas = [];
 
       for (final sector in data) {
-        final int idSector = int.parse(
-          sector['id_sector'].toString(),
-        );
+        final int idSector = int.parse(sector['id_sector'].toString());
 
-        final String nombreSector =
-            sector['nombre']?.toString() ?? '';
+        final String nombreSector = sector['nombre']?.toString() ?? '';
 
         try {
-          final plantasResponse = await http.get(
-            Uri.parse(
-              '$baseUrl/plantas/$idSector/plantas',
-            ),
-            headers: {
-              'Authorization': 'Bearer ${widget.token}',
-            },
-          ).timeout(
-            _timeoutCorto,
-            onTimeout: () {
-              throw Exception(
-                'El servidor no respondió a tiempo al cargar plantas del sector $idSector (timeout).',
+          final plantasResponse = await http
+              .get(
+                Uri.parse('$baseUrl/plantas/$idSector/plantas'),
+                headers: {'Authorization': 'Bearer ${widget.token}'},
+              )
+              .timeout(
+                _timeoutCorto,
+                onTimeout: () {
+                  throw Exception(
+                    'El servidor no respondió a tiempo al cargar plantas del sector $idSector (timeout).',
+                  );
+                },
               );
-            },
-          );
 
           debugPrint(
             'Sector $idSector - '
-                'Status plantas: '
-                '${plantasResponse.statusCode}',
+            'Status plantas: '
+            '${plantasResponse.statusCode}',
           );
 
           if (plantasResponse.statusCode != 200) {
             continue;
           }
 
-          final plantasData = jsonDecode(
-            plantasResponse.body,
-          );
+          final plantasData = jsonDecode(plantasResponse.body);
 
           if (plantasData is! List) {
             continue;
@@ -264,7 +248,7 @@ class _JardinesPageState extends State<JardinesPage> {
         } catch (e) {
           debugPrint(
             'Error cargando plantas del sector '
-                '$idSector: $e',
+            '$idSector: $e',
           );
         }
       }
@@ -288,13 +272,9 @@ class _JardinesPageState extends State<JardinesPage> {
         cargandoPlantas = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Error cargando las plantas: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error cargando las plantas: $e')));
     }
   }
 
@@ -322,14 +302,79 @@ class _JardinesPageState extends State<JardinesPage> {
     }
 
     return plantas.where((planta) {
-      final estado = (
-          planta['estado'] ??
-              planta['estado_salud'] ??
-              ''
-      ).toString().toLowerCase();
-
-      return estado == filtroSeleccionado.toLowerCase();
+      final estado = _categoriaEstado(planta);
+      return estado != null &&
+          _normalizarEstado(estado) == _normalizarEstado(filtroSeleccionado);
     }).toList();
+  }
+
+  String _normalizarEstado(String valor) => valor
+      .toLowerCase()
+      .trim()
+      .replaceAll('á', 'a')
+      .replaceAll('é', 'e')
+      .replaceAll('í', 'i')
+      .replaceAll('ó', 'o')
+      .replaceAll('ú', 'u')
+      .replaceAll('ü', 'u');
+
+  String? _categoriaEstado(dynamic planta) {
+    if (planta is! Map) return null;
+    final crudo =
+        (planta['estado_salud'] ?? planta['estado'] ?? planta['salud'] ?? '')
+            .toString();
+    final estado = _normalizarEstado(crudo);
+    if (estado.isEmpty) return null;
+
+    if ([
+      'critico',
+      'grave',
+      'seco',
+      'marchito',
+      'marchita',
+      'enfermo',
+      'enferma',
+      'daño',
+      'danio',
+    ].any(estado.contains)) {
+      return 'Crítico';
+    }
+    if ([
+      'atencion',
+      'advertencia',
+      'regular',
+      'moderado',
+      'moderada',
+      'observacion',
+    ].any(estado.contains)) {
+      return 'Atención';
+    }
+    if ([
+      'optimo',
+      'saludable',
+      'sano',
+      'sana',
+      'excelente',
+      'bueno',
+      'buena',
+      'estable',
+    ].any(estado.contains)) {
+      return 'Óptimo';
+    }
+    return null;
+  }
+
+  Color _colorCategoriaEstado(String? estado) {
+    switch (estado) {
+      case 'Óptimo':
+        return Colors.green;
+      case 'Atención':
+        return Colors.orange;
+      case 'Crítico':
+        return Colors.red;
+      default:
+        return Colors.blueGrey;
+    }
   }
 
   // ============================================================
@@ -363,23 +408,14 @@ class _JardinesPageState extends State<JardinesPage> {
       debugPrint('Tamaño: ${bytes.length} bytes');
       debugPrint('====================================');
 
-      final uri = Uri.parse(
-        '$baseUrl/identificacion/identificar',
-      );
+      final uri = Uri.parse('$baseUrl/identificacion/identificar');
 
-      final request = http.MultipartRequest(
-        'POST',
-        uri,
-      );
+      final request = http.MultipartRequest('POST', uri);
 
       request.headers['Authorization'] = 'Bearer ${widget.token}';
 
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'imagen',
-          bytes,
-          filename: imagen.name,
-        ),
+        http.MultipartFile.fromBytes('imagen', bytes, filename: imagen.name),
       );
 
       final streamedResponse = await request.send().timeout(
@@ -391,9 +427,7 @@ class _JardinesPageState extends State<JardinesPage> {
         },
       );
 
-      final response = await http.Response.fromStream(
-        streamedResponse,
-      );
+      final response = await http.Response.fromStream(streamedResponse);
 
       debugPrint('Identificación status: ${response.statusCode}');
       debugPrint('Identificación response: ${response.body}');
@@ -420,7 +454,7 @@ class _JardinesPageState extends State<JardinesPage> {
           SnackBar(
             content: Text(
               'Error ${response.statusCode}: '
-                  '${response.body}',
+              '${response.body}',
             ),
           ),
         );
@@ -430,13 +464,8 @@ class _JardinesPageState extends State<JardinesPage> {
 
       debugPrint('ERROR IDENTIFICANDO: $e');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Error al identificar: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error al identificar: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -467,9 +496,7 @@ class _JardinesPageState extends State<JardinesPage> {
               padding: const EdgeInsets.fromLTRB(25, 15, 25, 25),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(28),
-                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
               ),
               child: SafeArea(
                 child: SingleChildScrollView(
@@ -519,7 +546,7 @@ class _JardinesPageState extends State<JardinesPage> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE8F5E9),
+                          color: AppColors.mint,
                           borderRadius: BorderRadius.circular(18),
                         ),
                         child: Column(
@@ -527,7 +554,7 @@ class _JardinesPageState extends State<JardinesPage> {
                           children: [
                             const Icon(
                               Icons.eco,
-                              color: Color(0xFF2E7D32),
+                              color: AppColors.leaf,
                               size: 45,
                             ),
 
@@ -555,9 +582,9 @@ class _JardinesPageState extends State<JardinesPage> {
 
                             Text(
                               'Confianza: '
-                                  '${confianza.toStringAsFixed(1)}%',
+                              '${confianza.toStringAsFixed(1)}%',
                               style: const TextStyle(
-                                color: Color(0xFF2E7D32),
+                                color: AppColors.leaf,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -569,14 +596,14 @@ class _JardinesPageState extends State<JardinesPage> {
                                   children: [
                                     Icon(
                                       Icons.check_circle,
-                                      color: Color(0xFF2E7D32),
+                                      color: AppColors.leaf,
                                       size: 20,
                                     ),
                                     SizedBox(width: 8),
                                     Text(
                                       'Planta registrada',
                                       style: TextStyle(
-                                        color: Color(0xFF2E7D32),
+                                        color: AppColors.leaf,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
@@ -605,7 +632,7 @@ class _JardinesPageState extends State<JardinesPage> {
                             icon: const Icon(Icons.add),
                             label: const Text('Registrar en mi jardín'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2E7D32),
+                              backgroundColor: AppColors.leaf,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(15),
@@ -688,9 +715,7 @@ class _JardinesPageState extends State<JardinesPage> {
               color: Colors.grey.shade100,
               borderRadius: BorderRadius.circular(18),
             ),
-            child: const Center(
-              child: CircularProgressIndicator(),
-            ),
+            child: const Center(child: CircularProgressIndicator()),
           );
         }
 
@@ -719,31 +744,25 @@ class _JardinesPageState extends State<JardinesPage> {
     }
 
     try {
-      final response = await http.get(
-        Uri.parse(
-          '$baseUrl/jardines/$jardinSeleccionado/sectores',
-        ),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-        },
-      ).timeout(
-        _timeoutCorto,
-        onTimeout: () {
-          throw Exception(
-            'El servidor no respondió a tiempo al cargar sectores (timeout).',
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/jardines/$jardinSeleccionado/sectores'),
+            headers: {'Authorization': 'Bearer ${widget.token}'},
+          )
+          .timeout(
+            _timeoutCorto,
+            onTimeout: () {
+              throw Exception(
+                'El servidor no respondió a tiempo al cargar sectores (timeout).',
+              );
+            },
           );
-        },
-      );
 
       if (response.statusCode != 200) {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No se pudieron cargar los sectores.',
-            ),
-          ),
+          const SnackBar(content: Text('No se pudieron cargar los sectores.')),
         );
 
         return;
@@ -774,7 +793,7 @@ class _JardinesPageState extends State<JardinesPage> {
                 return Container(
                   constraints: BoxConstraints(
                     maxHeight:
-                    MediaQuery.of(registroContext).size.height * 0.90,
+                        MediaQuery.of(registroContext).size.height * 0.90,
                   ),
                   padding: const EdgeInsets.all(25),
                   decoration: const BoxDecoration(
@@ -814,7 +833,7 @@ class _JardinesPageState extends State<JardinesPage> {
                             'En $nombreJardinSeleccionado',
                             style: const TextStyle(
                               fontSize: 16,
-                              color: Color(0xFF2E7D32),
+                              color: AppColors.leaf,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -861,27 +880,25 @@ class _JardinesPageState extends State<JardinesPage> {
                                   ? 'No hay sectores'
                                   : 'Selecciona un sector',
                             ),
-                            items: sectores.map<DropdownMenuItem<int>>(
-                                  (sector) {
-                                final int id = int.parse(
-                                  sector['id_sector'].toString(),
-                                );
+                            items: sectores.map<DropdownMenuItem<int>>((
+                              sector,
+                            ) {
+                              final int id = int.parse(
+                                sector['id_sector'].toString(),
+                              );
 
-                                return DropdownMenuItem<int>(
-                                  value: id,
-                                  child: Text(
-                                    sector['nombre'].toString(),
-                                  ),
-                                );
-                              },
-                            ).toList(),
+                              return DropdownMenuItem<int>(
+                                value: id,
+                                child: Text(sector['nombre'].toString()),
+                              );
+                            }).toList(),
                             onChanged: sectores.isEmpty
                                 ? null
                                 : (value) {
-                              setModalState(() {
-                                sectorSeleccionado = value;
-                              });
-                            },
+                                    setModalState(() {
+                                      sectorSeleccionado = value;
+                                    });
+                                  },
                           ),
 
                           const SizedBox(height: 25),
@@ -894,16 +911,16 @@ class _JardinesPageState extends State<JardinesPage> {
                               onPressed: sectorSeleccionado == null
                                   ? null
                                   : () async {
-                                final exito = await registrarPlanta(
-                                  sectorSeleccionado!,
-                                );
+                                      final exito = await registrarPlanta(
+                                        sectorSeleccionado!,
+                                      );
 
-                                if (exito && mounted) {
-                                  Navigator.pop(registroContext);
-                                }
-                              },
+                                      if (exito && mounted) {
+                                        Navigator.pop(registroContext);
+                                      }
+                                    },
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF2E7D32),
+                                backgroundColor: AppColors.leaf,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(15),
@@ -925,13 +942,8 @@ class _JardinesPageState extends State<JardinesPage> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Error cargando sectores: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error cargando sectores: $e')));
     }
   }
 
@@ -945,9 +957,7 @@ class _JardinesPageState extends State<JardinesPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'No se encontró la fotografía de la planta.',
-          ),
+          content: Text('No se encontró la fotografía de la planta.'),
         ),
       );
 
@@ -961,22 +971,16 @@ class _JardinesPageState extends State<JardinesPage> {
     }
 
     try {
-      final uri = Uri.parse(
-        '$baseUrl/identificacion/registrar',
-      );
+      final uri = Uri.parse('$baseUrl/identificacion/registrar');
 
-      final request = http.MultipartRequest(
-        'POST',
-        uri,
-      );
+      final request = http.MultipartRequest('POST', uri);
 
       request.headers['Authorization'] = 'Bearer ${widget.token}';
 
       request.fields['idSector'] = idSector.toString();
       request.fields['nombre'] = nombreFinal;
       request.fields['nombreCientifico'] = nombreCientifico ?? '';
-      request.fields['descripcion'] =
-      'Planta identificada mediante PlantNet';
+      request.fields['descripcion'] = 'Planta identificada mediante PlantNet';
       request.fields['fechaRegistro'] = DateTime.now().toIso8601String();
 
       final Uint8List bytes = await imagenPlanta!.readAsBytes();
@@ -998,9 +1002,7 @@ class _JardinesPageState extends State<JardinesPage> {
         },
       );
 
-      final response = await http.Response.fromStream(
-        streamedResponse,
-      );
+      final response = await http.Response.fromStream(streamedResponse);
 
       debugPrint('Registro status: ${response.statusCode}');
       debugPrint('Registro response: ${response.body}');
@@ -1014,10 +1016,8 @@ class _JardinesPageState extends State<JardinesPage> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            backgroundColor: Color(0xFF2E7D32),
-            content: Text(
-              'Planta registrada correctamente',
-            ),
+            backgroundColor: AppColors.leaf,
+            content: Text('Planta registrada correctamente'),
           ),
         );
 
@@ -1032,7 +1032,7 @@ class _JardinesPageState extends State<JardinesPage> {
         SnackBar(
           content: Text(
             'Error al registrar: '
-                '${response.body}',
+            '${response.body}',
           ),
         ),
       );
@@ -1043,13 +1043,9 @@ class _JardinesPageState extends State<JardinesPage> {
 
       debugPrint('ERROR REGISTRANDO PLANTA: $e');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Error al registrar planta: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al registrar planta: $e')));
 
       return false;
     }
@@ -1062,6 +1058,7 @@ class _JardinesPageState extends State<JardinesPage> {
   void abrirAsistente({
     required String nombrePlanta,
     String? nombreCientifico,
+    int? idPlanta,
   }) async {
     final TextEditingController consultaController = TextEditingController();
 
@@ -1086,9 +1083,7 @@ class _JardinesPageState extends State<JardinesPage> {
                 padding: const EdgeInsets.fromLTRB(20, 15, 20, 20),
                 decoration: const BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(28),
-                  ),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
                 ),
                 child: SafeArea(
                   child: SingleChildScrollView(
@@ -1174,12 +1169,13 @@ class _JardinesPageState extends State<JardinesPage> {
 
                         _opcionConsulta(
                           texto: '¿Cómo debo cuidar esta planta?',
-                          seleccionada: preguntaSeleccionada ==
+                          seleccionada:
+                              preguntaSeleccionada ==
                               '¿Cómo debo cuidar esta planta?',
                           onTap: () {
                             setModalState(() {
                               preguntaSeleccionada =
-                              '¿Cómo debo cuidar esta planta?';
+                                  '¿Cómo debo cuidar esta planta?';
 
                               consultaController.text = preguntaSeleccionada;
                             });
@@ -1189,7 +1185,7 @@ class _JardinesPageState extends State<JardinesPage> {
                         _opcionConsulta(
                           texto: '¿Cuánta agua necesita?',
                           seleccionada:
-                          preguntaSeleccionada == '¿Cuánta agua necesita?',
+                              preguntaSeleccionada == '¿Cuánta agua necesita?',
                           onTap: () {
                             setModalState(() {
                               preguntaSeleccionada = '¿Cuánta agua necesita?';
@@ -1202,7 +1198,7 @@ class _JardinesPageState extends State<JardinesPage> {
                         _opcionConsulta(
                           texto: '¿Cuánta luz necesita?',
                           seleccionada:
-                          preguntaSeleccionada == '¿Cuánta luz necesita?',
+                              preguntaSeleccionada == '¿Cuánta luz necesita?',
                           onTap: () {
                             setModalState(() {
                               preguntaSeleccionada = '¿Cuánta luz necesita?';
@@ -1214,12 +1210,13 @@ class _JardinesPageState extends State<JardinesPage> {
 
                         _opcionConsulta(
                           texto: '¿Por qué sus hojas están amarillas?',
-                          seleccionada: preguntaSeleccionada ==
+                          seleccionada:
+                              preguntaSeleccionada ==
                               '¿Por qué sus hojas están amarillas?',
                           onTap: () {
                             setModalState(() {
                               preguntaSeleccionada =
-                              '¿Por qué sus hojas están amarillas?';
+                                  '¿Por qué sus hojas están amarillas?';
 
                               consultaController.text = preguntaSeleccionada;
                             });
@@ -1247,10 +1244,9 @@ class _JardinesPageState extends State<JardinesPage> {
                             });
                           },
                           decoration: InputDecoration(
-                            hintText:
-                            'Ej. ¿Por qué las hojas de mi planta están caídas?',
+                            hintText: 'Ej. ¿Por qué las hojas de mi planta están caídas?',
                             filled: true,
-                            fillColor: const Color(0xFFF5F7F5),
+                            fillColor: AppColors.background,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(15),
                               borderSide: BorderSide.none,
@@ -1283,10 +1279,7 @@ class _JardinesPageState extends State<JardinesPage> {
                               // IMPORTANTE:
                               // Solo cerramos el modal.
                               // NO hacemos Navigator.push aquí.
-                              Navigator.pop(
-                                modalContext,
-                                pregunta,
-                              );
+                              Navigator.pop(modalContext, pregunta);
                             },
                             icon: const Icon(Icons.smart_toy),
                             label: const Text('Consultar al asistente'),
@@ -1331,8 +1324,10 @@ class _JardinesPageState extends State<JardinesPage> {
       MaterialPageRoute(
         builder: (_) => AsistentePage(
           token: widget.token,
+          idPlanta: idPlanta,
+          nombrePlanta: nombrePlanta,
           preguntaInicial:
-          'Mira, acabo de identificar esta planta: '
+              'Mira, acabo de identificar esta planta: '
               '$nombrePlanta.\n\n'
               '$pregunta',
         ),
@@ -1356,9 +1351,7 @@ class _JardinesPageState extends State<JardinesPage> {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         decoration: BoxDecoration(
-          color: seleccionada
-              ? const Color(0xFFE3F2FD)
-              : const Color(0xFFF5F7F5),
+          color: seleccionada ? const Color(0xFFE3F2FD) : AppColors.background,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: seleccionada ? const Color(0xFF1565C0) : Colors.transparent,
@@ -1369,7 +1362,9 @@ class _JardinesPageState extends State<JardinesPage> {
             Icon(
               seleccionada ? Icons.check_circle : Icons.help_outline,
               size: 20,
-              color: seleccionada ? const Color(0xFF1565C0) : Colors.grey.shade600,
+              color: seleccionada
+                  ? const Color(0xFF1565C0)
+                  : Colors.grey.shade600,
             ),
 
             const SizedBox(width: 10),
@@ -1377,10 +1372,7 @@ class _JardinesPageState extends State<JardinesPage> {
             Expanded(
               child: Text(
                 texto,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey.shade800,
-                ),
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
               ),
             ),
           ],
@@ -1394,8 +1386,7 @@ class _JardinesPageState extends State<JardinesPage> {
   // ============================================================
 
   Widget _plantCard(dynamic planta) {
-    final nombre =
-        planta['nombre'] ?? planta['nombre_comun'] ?? 'Sin nombre';
+    final nombre = planta['nombre'] ?? planta['nombre_comun'] ?? 'Sin nombre';
 
     final cientifico =
         planta['nombre_cientifico'] ?? planta['nombreCientifico'] ?? '';
@@ -1405,6 +1396,8 @@ class _JardinesPageState extends State<JardinesPage> {
     final sector = planta['nombre_sector'] ?? '';
 
     final fotoUrl = planta['foto_url'];
+    final estadoSalud = _categoriaEstado(planta);
+    final colorEstado = _colorCategoriaEstado(estadoSalud);
 
     String? imagenUrl;
 
@@ -1446,57 +1439,53 @@ class _JardinesPageState extends State<JardinesPage> {
                 clipBehavior: Clip.antiAlias,
                 child: imagenUrl == null
                     ? const Center(
-                  child: Icon(
-                    Icons.eco,
-                    size: 40,
-                    color: Color(0xFF2E7D32),
-                  ),
-                )
-                // 👇 FIX: cacheWidth evita decodificar la imagen
-                // a resolución completa, que causaba jank/freeze
-                // al hacer scroll en la grilla.
+                        child: Icon(Icons.eco, size: 40, color: AppColors.leaf),
+                      )
+                    // 👇 FIX: cacheWidth evita decodificar la imagen
+                    // a resolución completa, que causaba jank/freeze
+                    // al hacer scroll en la grilla.
                     : Image.network(
-                  imagenUrl,
-                  width: double.infinity,
-                  height: double.infinity,
-                  fit: BoxFit.cover,
-                  cacheWidth: 300,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) {
-                      return child;
-                    }
+                        imagenUrl,
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                        cacheWidth: 300,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) {
+                            return child;
+                          }
 
-                    return const Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFF2E7D32),
-                      ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      color: Colors.grey.shade100,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.broken_image_outlined,
-                            size: 40,
-                            color: Colors.grey.shade500,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'No se pudo cargar',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade600,
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              color: AppColors.leaf,
                             ),
-                          ),
-                        ],
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.grey.shade100,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 40,
+                                  color: Colors.grey.shade500,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'No se pudo cargar',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ),
 
@@ -1505,10 +1494,7 @@ class _JardinesPageState extends State<JardinesPage> {
             // NOMBRE
             Text(
               nombre.toString(),
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1532,15 +1518,33 @@ class _JardinesPageState extends State<JardinesPage> {
             // UBICACIÓN
             Text(
               '$jardin - $sector',
-              style: TextStyle(
-                color: Colors.grey.shade500,
-                fontSize: 11,
-              ),
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
+
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: colorEstado.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  estadoSalud ?? 'Sin evaluar',
+                  style: TextStyle(
+                    color: colorEstado,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 6),
 
             // IA
             SizedBox(
@@ -1550,8 +1554,10 @@ class _JardinesPageState extends State<JardinesPage> {
                 onPressed: () {
                   abrirAsistente(
                     nombrePlanta: nombre.toString(),
-                    nombreCientifico:
-                    cientifico.toString().isEmpty ? null : cientifico.toString(),
+                    nombreCientifico: cientifico.toString().isEmpty
+                        ? null
+                        : cientifico.toString(),
+                    idPlanta: int.tryParse('${planta['id_planta']}'),
                   );
                 },
                 icon: const Icon(Icons.smart_toy, size: 16),
@@ -1584,7 +1590,7 @@ class _JardinesPageState extends State<JardinesPage> {
     // VISTA 1: LISTA DE JARDINES
     if (jardinSeleccionado == null) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF5F7F5),
+        backgroundColor: AppColors.background,
         appBar: AppBar(
           title: const Text(
             'Mis Jardines',
@@ -1599,7 +1605,7 @@ class _JardinesPageState extends State<JardinesPage> {
 
     // VISTA 2: PLANTAS DEL JARDÍN
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F5),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         leading: IconButton(
           onPressed: volverAJardines,
@@ -1610,10 +1616,7 @@ class _JardinesPageState extends State<JardinesPage> {
           children: [
             Text(
               nombreJardinSeleccionado ?? 'Jardín',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
             if (ubicacionJardinSeleccionado != null &&
                 ubicacionJardinSeleccionado!.isNotEmpty)
@@ -1636,19 +1639,17 @@ class _JardinesPageState extends State<JardinesPage> {
               onPressed: identificando ? null : identificarPlanta,
               icon: identificando
                   ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : const Icon(Icons.camera_alt, size: 18),
-              label: Text(
-                identificando ? 'Identificando...' : 'Identificar',
-              ),
+              label: Text(identificando ? 'Identificando...' : 'Identificar'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2E7D32),
+                backgroundColor: AppColors.leaf,
                 foregroundColor: Colors.white,
                 disabledBackgroundColor: Colors.grey.shade400,
                 disabledForegroundColor: Colors.white,
@@ -1671,7 +1672,7 @@ class _JardinesPageState extends State<JardinesPage> {
   Widget _buildListaJardines() {
     if (cargandoJardines) {
       return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF2E7D32)),
+        child: CircularProgressIndicator(color: AppColors.leaf),
       );
     }
 
@@ -1703,33 +1704,16 @@ class _JardinesPageState extends State<JardinesPage> {
     }
 
     if (jardines.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(25),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.eco_outlined, size: 70, color: Color(0xFF2E7D32)),
-              SizedBox(height: 15),
-              Text(
-                'No tienes jardines registrados',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Cuando registres un jardín aparecerá aquí.',
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
+      return const EmptyStatePanel(
+        icon: Icons.eco_outlined,
+        title: 'Aún no tienes jardines',
+        message: 'Cuando registres un jardín, sus sectores y plantas aparecerán aquí.',
       );
     }
 
     return RefreshIndicator(
       onRefresh: cargarJardines,
-      color: const Color(0xFF2E7D32),
+      color: AppColors.leaf,
       child: ListView.builder(
         padding: const EdgeInsets.all(20),
         itemCount: jardines.length,
@@ -1763,13 +1747,7 @@ class _JardinesPageState extends State<JardinesPage> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          border: Border.all(color: AppColors.border),
         ),
         child: Row(
           children: [
@@ -1777,14 +1755,10 @@ class _JardinesPageState extends State<JardinesPage> {
               width: 55,
               height: 55,
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F5E9),
+                color: AppColors.mint,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(
-                Icons.eco,
-                color: Color(0xFF2E7D32),
-                size: 30,
-              ),
+              child: const Icon(Icons.eco, color: AppColors.leaf, size: 30),
             ),
             const SizedBox(width: 15),
             Expanded(
@@ -1836,7 +1810,7 @@ class _JardinesPageState extends State<JardinesPage> {
           padding: const EdgeInsets.fromLTRB(20, 5, 20, 0),
           child: Row(
             children: [
-              const Icon(Icons.eco, color: Color(0xFF2E7D32), size: 22),
+              const Icon(Icons.eco, color: AppColors.leaf, size: 22),
               const SizedBox(width: 8),
               const Text(
                 'Mis plantas',
@@ -1846,7 +1820,7 @@ class _JardinesPageState extends State<JardinesPage> {
               if (!cargandoPlantas)
                 Text(
                   '${plantas.length} '
-                      '${plantas.length == 1 ? 'planta' : 'plantas'}',
+                  '${plantas.length == 1 ? 'planta' : 'plantas'}',
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                 ),
             ],
@@ -1862,11 +1836,23 @@ class _JardinesPageState extends State<JardinesPage> {
             children: [
               _filterChip('Todas', filtroSeleccionado == 'Todas'),
               const SizedBox(width: 10),
-              _filterChip('Óptimo', filtroSeleccionado == 'Óptimo', color: Colors.green),
+              _filterChip(
+                'Óptimo',
+                filtroSeleccionado == 'Óptimo',
+                color: Colors.green,
+              ),
               const SizedBox(width: 10),
-              _filterChip('Atención', filtroSeleccionado == 'Atención', color: Colors.orange),
+              _filterChip(
+                'Atención',
+                filtroSeleccionado == 'Atención',
+                color: Colors.orange,
+              ),
               const SizedBox(width: 10),
-              _filterChip('Crítico', filtroSeleccionado == 'Crítico', color: Colors.red),
+              _filterChip(
+                'Crítico',
+                filtroSeleccionado == 'Crítico',
+                color: Colors.red,
+              ),
             ],
           ),
         ),
@@ -1876,26 +1862,25 @@ class _JardinesPageState extends State<JardinesPage> {
         Expanded(
           child: cargandoPlantas
               ? const Center(
-            child: CircularProgressIndicator(color: Color(0xFF2E7D32)),
-          )
+                  child: CircularProgressIndicator(color: AppColors.leaf),
+                )
               : plantasFiltradas.isEmpty
               ? _inventarioVacio()
               : GridView.builder(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-            gridDelegate:
-            const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 14,
-              mainAxisSpacing: 14,
-              childAspectRatio: 0.64,
-            ),
-            itemCount: plantasFiltradas.length,
-            itemBuilder: (context, index) {
-              final planta = plantasFiltradas[index];
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 14,
+                    mainAxisSpacing: 14,
+                    childAspectRatio: 0.64,
+                  ),
+                  itemCount: plantasFiltradas.length,
+                  itemBuilder: (context, index) {
+                    final planta = plantasFiltradas[index];
 
-              return _plantCard(planta);
-            },
-          ),
+                    return _plantCard(planta);
+                  },
+                ),
         ),
       ],
     );
@@ -1942,7 +1927,7 @@ class _JardinesPageState extends State<JardinesPage> {
                 icon: const Icon(Icons.camera_alt),
                 label: const Text('Identificar planta'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2E7D32),
+                  backgroundColor: AppColors.leaf,
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -1967,10 +1952,10 @@ class _JardinesPageState extends State<JardinesPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
         decoration: BoxDecoration(
-          color: seleccionado ? const Color(0xFF2E7D32) : Colors.white,
+          color: seleccionado ? AppColors.leaf : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: seleccionado ? const Color(0xFF2E7D32) : Colors.grey.shade300,
+            color: seleccionado ? AppColors.leaf : Colors.grey.shade300,
           ),
         ),
         child: Row(

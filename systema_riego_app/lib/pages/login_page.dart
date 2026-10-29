@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import 'dashboard_page.dart';
 
@@ -71,7 +72,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F5),
+      backgroundColor: AppColors.background,
 
       body: SafeArea(
         child: Center(
@@ -81,10 +82,18 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               children: [
 
-                const Icon(
-                  Icons.water_drop,
-                  size: 70,
-                  color: Color(0xFF2E7D32),
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: const BoxDecoration(
+                    color: AppColors.mint,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.water_drop_rounded,
+                    size: 44,
+                    color: AppColors.leaf,
+                  ),
                 ),
 
                 const SizedBox(height: 15),
@@ -94,6 +103,7 @@ class _LoginPageState extends State<LoginPage> {
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
+                    color: AppColors.ink,
                   ),
                 ),
 
@@ -103,6 +113,18 @@ class _LoginPageState extends State<LoginPage> {
                   'Inicia sesión para administrar tu jardín',
                   style: TextStyle(
                     color: Colors.grey.shade600,
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                const Text(
+                  'MONITOREO  ·  RIEGO  ·  CUIDADO',
+                  style: TextStyle(
+                    color: AppColors.leaf,
+                    fontSize: 10,
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
 
@@ -162,7 +184,7 @@ class _LoginPageState extends State<LoginPage> {
 
                     style: ElevatedButton.styleFrom(
                       backgroundColor:
-                          const Color(0xFF2E7D32),
+                          AppColors.forest,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius:

@@ -50,6 +50,7 @@ class IaService {
     required String nombreArchivo,
     required String token,
     String pregunta = '',
+    String? contextoCaso,
   }) async {
     final uri = Uri.parse('$baseUrl/api/ia/analizar-planta');
 
@@ -66,6 +67,9 @@ class IaService {
     // ==========================================================
 
     request.fields['pregunta'] = pregunta;
+    if (contextoCaso != null && contextoCaso.trim().isNotEmpty) {
+      request.fields['contexto_caso'] = contextoCaso;
+    }
 
     // ==========================================================
     // IMAGEN

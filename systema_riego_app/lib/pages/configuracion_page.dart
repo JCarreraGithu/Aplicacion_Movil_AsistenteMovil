@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 import '../services/actuador_configuracion_service.dart';
 import '../services/jardin_service.dart';
+import '../widgets/app_components.dart';
+import 'notificaciones_page.dart';
 
 class ConfiguracionPage extends StatefulWidget {
   final String token;
@@ -21,8 +24,7 @@ class _ConfiguracionPageState extends State<ConfiguracionPage> {
   bool cargando = true;
   bool guardandoActuador = false;
   String? error;
-  bool notificaciones = true;
-  bool modoAutomatico = true;
+  bool? modoAutomatico;
 
   @override
   void initState() {
@@ -150,14 +152,14 @@ class _ConfiguracionPageState extends State<ConfiguracionPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F5),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Configuración', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
       body: cargando
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF2E7D32)))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.leaf))
           : error != null
               ? _mensajeError()
               : _contenido(),
@@ -178,7 +180,7 @@ class _ConfiguracionPageState extends State<ConfiguracionPage> {
   Widget _contenido() => ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const Text('Riego', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
+          const SectionHeading(title: 'Riego', subtitle: 'Jardín y sector bajo seguimiento'),
           const SizedBox(height: 10),
           if (jardines.isEmpty)
             _settingCard(Icons.grass, 'Jardines', 'Aún no tienes jardines registrados', const SizedBox.shrink())
@@ -204,18 +206,40 @@ class _ConfiguracionPageState extends State<ConfiguracionPage> {
           _settingCard(
             Icons.auto_mode,
             'Modo automático',
-            'Estado registrado para el sector seleccionado',
-            Switch(value: modoAutomatico, onChanged: null),
+            'Configuración registrada en el backend',
+            _estadoChip(
+              modoAutomatico == null
+                  ? 'Sin dato'
+                  : modoAutomatico!
+                      ? 'Automático'
+                      : 'Manual',
+            ),
           ),
           const SizedBox(height: 10),
           _settingCard(
             Icons.notifications_outlined,
             'Notificaciones',
-            'Recibir alertas del sistema',
-            Switch(value: notificaciones, onChanged: (value) => setState(() => notificaciones = value)),
+            'Consulta las alertas y recordatorios de la app',
+            idSector == null
+                ? const Text('Sin sector')
+                : TextButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => NotificacionesPage(
+                          token: widget.token,
+                          idSector: idSector!,
+                        ),
+                      ),
+                    ),
+                    child: const Text('Ver'),
+                  ),
           ),
           const SizedBox(height: 25),
-          const Text('Bombas y actuadores', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
+          const SectionHeading(
+            title: 'Bombas y actuadores',
+            subtitle: 'Estado actual reportado por cada dispositivo',
+          ),
           const SizedBox(height: 10),
           if (idSector == null)
             _settingCard(Icons.water, 'Sin sectores', 'Selecciona un jardín que tenga sectores', const SizedBox.shrink())
@@ -251,7 +275,11 @@ class _ConfiguracionPageState extends State<ConfiguracionPage> {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: AppColors.border),
+      ),
       child: DropdownButtonFormField<T>(
         value: validValue,
         decoration: InputDecoration(labelText: label, border: InputBorder.none),
@@ -267,9 +295,13 @@ class _ConfiguracionPageState extends State<ConfiguracionPage> {
   Widget _settingCard(IconData icon, String title, String subtitle, Widget trailing) => Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.border),
+        ),
         child: Row(children: [
-          Icon(icon, color: const Color(0xFF2E7D32), size: 26),
+          Icon(icon, color: AppColors.leaf, size: 26),
           const SizedBox(width: 15),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -278,5 +310,21 @@ class _ConfiguracionPageState extends State<ConfiguracionPage> {
           ])),
           trailing,
         ]),
+      );
+
+  Widget _estadoChip(String label) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        decoration: BoxDecoration(
+          color: AppColors.mint,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.forest,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       );
 }

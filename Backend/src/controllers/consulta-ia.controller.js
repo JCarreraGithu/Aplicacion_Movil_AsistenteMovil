@@ -63,6 +63,7 @@ const analizarPlanta = async (req, res) => {
 
         const pregunta =
             req.body.pregunta || '';
+        const contextoCaso = req.body.contexto_caso || '';
 
         const imagenBase64 =
             req.file.buffer.toString('base64');
@@ -108,7 +109,8 @@ const analizarPlanta = async (req, res) => {
                 imagenBase64,
                 mimeType,
                 pregunta,
-                idUsuario
+                idUsuario,
+                contextoCaso
             });
 
         // ================================================

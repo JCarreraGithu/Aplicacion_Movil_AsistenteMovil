@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'pages/login_page.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const SistemaRiegoApp());
@@ -15,16 +16,7 @@ class SistemaRiegoApp extends StatelessWidget {
 
       title: 'Sistema de Riego',
 
-      theme: ThemeData(
-        useMaterial3: true,
-
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2E7D32),
-        ),
-
-        scaffoldBackgroundColor:
-            const Color(0xFFF5F7F5),
-      ),
+      theme: AppTheme.light,
 
       home: const LoginPage(),
     );

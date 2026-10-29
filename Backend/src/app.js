@@ -19,6 +19,11 @@ const app = express();
 const identificacionRoutes = require('./routes/identificacion.routes');
 const casoRoutes = require('./routes/caso.routes');
 const path = require('path');
+const { rateLimit } = require('express-rate-limit');
+const dispositivoRoutes = require('./routes/dispositivo.routes');
+const comandoActuadorRoutes = require('./routes/comando-actuador.routes');
+const deviceRoutes = require('./routes/device.routes');
+const capacitacionRoutes = require('./routes/capacitacion.routes');
 
 
 
@@ -31,8 +36,10 @@ app.use('/api/jardines', sectorRoutes);
 app.use('/api/especies', especiePlantaRoutes);
 app.use('/api/plantas', plantaRoutes);
 app.use('/api/sectores', configuracionRiegoRoutes);
+app.use('/api/dispositivos', dispositivoRoutes);
 app.use('/api/lecturas', lecturaSensorRoutes);
 app.use('/api/sensores', sensorRoutes);
+app.use('/api/actuadores', comandoActuadorRoutes);
 app.use('/api/actuadores', actuadorRoutes);
 app.use('/api/riegos', riegoRoutes);
 app.use(
@@ -41,6 +48,14 @@ app.use(
 );
 app.use('/api/ia', consultaIaRoutes);
 app.use('/api/casos', casoRoutes);
+app.use('/api/capacitacion', capacitacionRoutes);
+app.use('/api/device', rateLimit({
+    windowMs: 60 * 1000,
+    limit: 120,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (_req, res) => res.status(429).json({ mensaje: 'Demasiadas solicitudes del dispositivo' })
+}), deviceRoutes);
 
 
 
@@ -58,13 +73,27 @@ app.use(
     )
 );
 
-app.listen(PORT, () => {
-    console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
-});
-
 app.get('/api/protegido', verificarToken, (req, res) => {
     res.json({
         mensaje: 'Acceso autorizado',
         usuario: req.usuario
     });
+});
+
+// Último middleware: evita que Express exponga páginas HTML o trazas internas.
+app.use((error, req, res, next) => {
+    if (res.headersSent) {
+        return next(error);
+    }
+
+    if (error.type === 'entity.parse.failed') {
+        return res.status(400).json({ mensaje: 'JSON inválido' });
+    }
+
+    console.error('Error interno no controlado:', error);
+    return res.status(500).json({ mensaje: 'Error interno' });
+});
+
+app.listen(PORT, () => {
+    console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
 });

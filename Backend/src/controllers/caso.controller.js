@@ -1,4 +1,9 @@
 const casoService = require('../services/caso.service');
+const fs = require('fs');
+
+const eliminarImagenSubida = (file) => {
+    if (file?.path) fs.unlink(file.path, () => {});
+};
 
 // ============================================================
 // CREAR CASO
@@ -14,7 +19,8 @@ const crearCaso = async (req, res) => {
             id_consulta,
             titulo,
             diagnostico,
-            plan_trabajo
+            plan_trabajo,
+            pasos
         } = req.body;
 
         if (!titulo || !diagnostico || !plan_trabajo) {
@@ -28,6 +34,13 @@ const crearCaso = async (req, res) => {
             (id_consulta != null && (!Number.isInteger(Number(id_consulta)) || Number(id_consulta) < 1))) {
             return res.status(400).json({ mensaje: 'Los identificadores de planta, sector y consulta deben ser enteros positivos' });
         }
+        if (pasos != null && (!Array.isArray(pasos) || pasos.some((paso) =>
+            !paso || typeof paso.descripcion !== 'string' || !paso.descripcion.trim() ||
+            (paso.fecha_limite != null && (Number.isNaN(Date.parse(paso.fecha_limite)) || Date.parse(paso.fecha_limite) <= Date.now())) ||
+            (paso.recordatorio_fecha != null && (Number.isNaN(Date.parse(paso.recordatorio_fecha)) || Date.parse(paso.recordatorio_fecha) <= Date.now())) ||
+            (paso.recordatorio_mensaje != null && typeof paso.recordatorio_mensaje !== 'string')))) {
+            return res.status(400).json({ mensaje: 'Los pasos o plazos propuestos no son válidos' });
+        }
 
         const caso = await casoService.crearCaso(idUsuario, {
             id_planta,
@@ -35,7 +48,8 @@ const crearCaso = async (req, res) => {
             id_consulta,
             titulo,
             diagnostico,
-            plan_trabajo
+            plan_trabajo,
+            pasos
         });
 
         if (!caso) {
@@ -142,9 +156,18 @@ const agregarSeguimiento = async (req, res) => {
     try {
         const idUsuario = req.usuario.id_usuario;
         const idCaso = req.params.idCaso;
-        const { nota, imagen_url } = req.body;
+        const { nota, id_recordatorio } = req.body;
+
+        const idRecordatorio = id_recordatorio == null || id_recordatorio === ''
+            ? null
+            : Number(id_recordatorio);
+        if (idRecordatorio != null && (!Number.isInteger(idRecordatorio) || idRecordatorio <= 0)) {
+            eliminarImagenSubida(req.file);
+            return res.status(400).json({ mensaje: 'id_recordatorio debe ser un identificador válido' });
+        }
 
         if (!nota || nota.trim().length === 0) {
+            eliminarImagenSubida(req.file);
             return res.status(400).json({
                 mensaje: 'La nota de seguimiento es obligatoria'
             });
@@ -154,10 +177,17 @@ const agregarSeguimiento = async (req, res) => {
             idUsuario,
             idCaso,
             nota,
-            imagen_url
+            req.file ? `/uploads/casos/${req.file.filename}` : null,
+            idRecordatorio
         );
 
+        if (seguimiento === 'recordatorio_no_encontrado') {
+            eliminarImagenSubida(req.file);
+            return res.status(404).json({ mensaje: 'Recordatorio activo no encontrado para este caso' });
+        }
+
         if (!seguimiento) {
+            eliminarImagenSubida(req.file);
             return res.status(404).json({
                 mensaje: 'Caso no encontrado'
             });
@@ -167,6 +197,7 @@ const agregarSeguimiento = async (req, res) => {
 
     } catch (error) {
         console.error(error);
+        eliminarImagenSubida(req.file);
 
         res.status(500).json({
             mensaje: 'Error al agregar el seguimiento'
@@ -217,6 +248,28 @@ const cambiarEstadoCaso = async (req, res) => {
         res.status(500).json({
             mensaje: 'Error al actualizar el estado del caso'
         });
+    }
+};
+
+const cerrarCasoConResultado = async (req, res) => {
+    try {
+        const resultado = typeof req.body.resultado === 'string'
+            ? req.body.resultado.trim()
+            : '';
+        if (!resultado) {
+            return res.status(400).json({ mensaje: 'Describe el resultado final antes de cerrar el caso' });
+        }
+        const caso = await casoService.cerrarCasoConResultado(
+            req.usuario.id_usuario,
+            req.params.idCaso,
+            resultado
+        );
+        if (!caso) return res.status(404).json({ mensaje: 'Caso no encontrado' });
+        if (caso === 'caso_cerrado') return res.status(409).json({ mensaje: 'El caso ya está cerrado' });
+        res.json(caso);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ mensaje: 'Error al cerrar el caso' });
     }
 };
 
@@ -298,6 +351,34 @@ const crearRecordatorio = async (req, res) => {
     }
 };
 
+const actualizarRecordatorio = async (req, res) => {
+    try {
+        const { mensaje, fecha_recordatorio } = req.body;
+        if (!mensaje || typeof mensaje !== 'string' || !mensaje.trim() ||
+            !fecha_recordatorio || Number.isNaN(Date.parse(fecha_recordatorio))) {
+            return res.status(400).json({ mensaje: 'mensaje y fecha_recordatorio válida son obligatorios' });
+        }
+        if (new Date(fecha_recordatorio).getTime() <= Date.now()) {
+            return res.status(400).json({ mensaje: 'El recordatorio debe programarse para una fecha futura' });
+        }
+        const recordatorio = await casoService.actualizarRecordatorio(
+            req.usuario.id_usuario,
+            req.params.idCaso,
+            req.params.idRecordatorio,
+            mensaje.trim(),
+            fecha_recordatorio
+        );
+        if (recordatorio === 'recordatorio_duplicado') {
+            return res.status(409).json({ mensaje: 'Ya existe un recordatorio igual para esa fecha' });
+        }
+        if (!recordatorio) return res.status(404).json({ mensaje: 'Recordatorio o caso no encontrado' });
+        res.json(recordatorio);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ mensaje: 'Error al actualizar el recordatorio' });
+    }
+};
+
 const completarRecordatorio = async (req, res) => {
     try {
         const recordatorio = await casoService.completarRecordatorio(
@@ -318,11 +399,13 @@ module.exports = {
     obtenerCasoPorId,
     agregarSeguimiento,
     cambiarEstadoCaso,
+    cerrarCasoConResultado,
     obtenerTareas,
     crearTarea,
     actualizarTarea,
     obtenerRecordatorios,
     obtenerRecordatoriosUsuario,
     crearRecordatorio,
+    actualizarRecordatorio,
     completarRecordatorio
 };

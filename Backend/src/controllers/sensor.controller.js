@@ -50,7 +50,10 @@ const obtenerSensoresPorSector = async (req, res) => {
         const { idSector } = req.params;
 
         const sensores =
-            await sensorService.obtenerSensoresPorSector(idSector);
+            await sensorService.obtenerSensoresPorSector(
+                idSector,
+                req.usuario.id_usuario
+            );
 
         res.json(sensores);
 

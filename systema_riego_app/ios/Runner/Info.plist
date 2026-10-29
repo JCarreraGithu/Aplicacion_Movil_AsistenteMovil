@@ -24,6 +24,10 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Se usa la cámara para adjuntar fotos a los avances de recuperación de tus plantas.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Se usa la galería para elegir fotos que acompañen los avances de recuperación de tus plantas.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

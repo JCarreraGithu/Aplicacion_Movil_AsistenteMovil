@@ -1,4 +1,7 @@
 -- Run against the database that contains the SISTEMA_RIEGO schema.
+ALTER TABLE SISTEMA_RIEGO.seguimiento_caso
+    ADD COLUMN IF NOT EXISTS imagen_url VARCHAR(255);
+
 ALTER TABLE SISTEMA_RIEGO.caso_planta
     ADD COLUMN IF NOT EXISTS id_sector INTEGER
         REFERENCES SISTEMA_RIEGO.sector(id_sector);

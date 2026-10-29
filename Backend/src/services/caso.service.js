@@ -12,7 +12,8 @@ const crearCaso = async (idUsuario, datos) => {
         titulo,
         diagnostico,
         plan_trabajo,
-        id_sector
+        id_sector,
+        pasos
     } = datos;
 
     const client = await pool.connect();
@@ -65,15 +66,36 @@ const crearCaso = async (idUsuario, datos) => {
         `, [idUsuario, id_planta || null, idSectorFinal, id_consulta || null, titulo, diagnostico, plan_trabajo]);
 
         const caso = result.rows[0];
-        const pasos = String(plan_trabajo)
-            .split(/\r?\n/)
-            .map((linea) => linea.replace(/^\s*(?:[-*•]+|\d+[.)])\s*/, '').trim())
-            .filter((linea) => linea.length > 2 && !/no se requiere ningún plan|definir seguimiento y tratamiento recomendado/i.test(linea));
-        for (const descripcion of pasos) {
-            await client.query(`
-                INSERT INTO SISTEMA_RIEGO.caso_tarea (id_caso, descripcion)
-                VALUES ($1, $2)
-            `, [caso.id_caso, descripcion]);
+        const pasosPersistibles = Array.isArray(pasos)
+            ? pasos
+            : String(plan_trabajo)
+                .split(/\r?\n/)
+                .map((linea) => ({ descripcion: linea.replace(/^\s*(?:[-*•]+|\d+[.)])\s*/, '').trim() }));
+        const recordatoriosVistos = new Set();
+        for (const paso of pasosPersistibles) {
+            const descripcion = String(paso.descripcion).trim();
+            if (descripcion.length < 3 || /sin pasos de tratamiento registrados|no se requiere ningún plan|definir seguimiento y tratamiento recomendado/i.test(descripcion)) continue;
+            const tarea = await client.query(`
+                INSERT INTO SISTEMA_RIEGO.caso_tarea (id_caso, descripcion, fecha_limite)
+                VALUES ($1, $2, $3)
+                RETURNING id_tarea
+            `, [caso.id_caso, descripcion, paso.fecha_limite || null]);
+
+            if (paso.recordatorio_fecha && paso.recordatorio_mensaje) {
+                const mensaje = String(paso.recordatorio_mensaje).trim();
+                const fecha = new Date(paso.recordatorio_fecha);
+                if (mensaje && !Number.isNaN(fecha.getTime()) && fecha.getTime() > Date.now()) {
+                    const clave = `${mensaje.toLowerCase()}|${fecha.toISOString()}`;
+                    if (!recordatoriosVistos.has(clave)) {
+                        recordatoriosVistos.add(clave);
+                        await client.query(`
+                            INSERT INTO SISTEMA_RIEGO.recordatorio_caso
+                                (id_caso, id_tarea, mensaje, fecha_recordatorio)
+                            VALUES ($1, $2, $3, $4)
+                        `, [caso.id_caso, tarea.rows[0].id_tarea, mensaje, fecha.toISOString()]);
+                    }
+                }
+            }
         }
 
         await client.query('COMMIT');
@@ -113,11 +135,14 @@ const obtenerCasos = async (idUsuario, estado) => {
             c.fecha_apertura,
             c.fecha_cierre,
             p.nombre AS nombre_planta,
-            p.foto_url AS foto_planta,
+            to_jsonb(p)->>'foto_url' AS foto_planta,
+            ep.nombre_comun AS especie_nombre_comun,
+            ep.nombre_cientifico AS especie_nombre_cientifico,
             s.nombre AS nombre_sector
         FROM SISTEMA_RIEGO.caso_planta c
         LEFT JOIN SISTEMA_RIEGO.planta p
             ON c.id_planta = p.id_planta
+        LEFT JOIN SISTEMA_RIEGO.especie_planta ep ON ep.id_especie = p.id_especie
         LEFT JOIN SISTEMA_RIEGO.sector s ON s.id_sector = COALESCE(c.id_sector, p.id_sector)
         WHERE c.id_usuario = $1
         ${filtroEstado}
@@ -160,13 +185,16 @@ const obtenerCasoPorId = async (idUsuario, idCaso) => {
         SELECT
             c.*,
             p.nombre AS nombre_planta,
-            p.foto_url AS foto_planta,
+            to_jsonb(p)->>'foto_url' AS foto_planta,
+            ep.nombre_comun AS especie_nombre_comun,
+            ep.nombre_cientifico AS especie_nombre_cientifico,
             COALESCE(c.id_sector, p.id_sector) AS id_sector,
             s.nombre AS nombre_sector,
             j.nombre AS nombre_jardin
         FROM SISTEMA_RIEGO.caso_planta c
         LEFT JOIN SISTEMA_RIEGO.planta p
             ON c.id_planta = p.id_planta
+        LEFT JOIN SISTEMA_RIEGO.especie_planta ep ON ep.id_especie = p.id_especie
         LEFT JOIN SISTEMA_RIEGO.sector s ON s.id_sector = COALESCE(c.id_sector, p.id_sector)
         LEFT JOIN SISTEMA_RIEGO.jardin j ON j.id_jardin = s.id_jardin
         WHERE c.id_caso = $1
@@ -231,8 +259,10 @@ const actualizarTarea = async (idUsuario, idCaso, idTarea, completada) => {
 const obtenerRecordatorios = async (idUsuario, idCaso) => {
     if (!await verificarCasoUsuario(idUsuario, idCaso)) return null;
     const result = await pool.query(`
-        SELECT * FROM SISTEMA_RIEGO.recordatorio_caso
-        WHERE id_caso = $1 ORDER BY fecha_recordatorio
+        SELECT r.*, t.descripcion AS tarea_descripcion
+        FROM SISTEMA_RIEGO.recordatorio_caso r
+        LEFT JOIN SISTEMA_RIEGO.caso_tarea t ON t.id_tarea = r.id_tarea
+        WHERE r.id_caso = $1 ORDER BY r.fecha_recordatorio
     `, [idCaso]);
     return result.rows;
 };
@@ -249,32 +279,115 @@ const obtenerRecordatoriosUsuario = async (idUsuario) => {
             c.titulo AS titulo_caso,
             c.estado AS estado_caso,
             p.nombre AS nombre_planta,
-            s.nombre AS nombre_sector
+            s.nombre AS nombre_sector,
+            t.descripcion AS tarea_descripcion,
+            ep.nombre_comun AS especie_nombre_comun,
+            ep.nombre_cientifico AS especie_nombre_cientifico
         FROM SISTEMA_RIEGO.recordatorio_caso r
         INNER JOIN SISTEMA_RIEGO.caso_planta c ON c.id_caso = r.id_caso
         LEFT JOIN SISTEMA_RIEGO.planta p ON p.id_planta = c.id_planta
+        LEFT JOIN SISTEMA_RIEGO.especie_planta ep ON ep.id_especie = p.id_especie
         LEFT JOIN SISTEMA_RIEGO.sector s ON s.id_sector = COALESCE(c.id_sector, p.id_sector)
+        LEFT JOIN SISTEMA_RIEGO.caso_tarea t ON t.id_tarea = r.id_tarea
         WHERE c.id_usuario = $1 AND r.activo = TRUE
+          AND c.estado NOT IN ('resuelto', 'abandonado')
         ORDER BY r.fecha_recordatorio ASC
     `, [idUsuario]);
     return result.rows;
 };
 
 const crearRecordatorio = async (idUsuario, idCaso, mensaje, fechaRecordatorio, idTarea) => {
-    if (!await verificarCasoUsuario(idUsuario, idCaso)) return null;
-    if (idTarea) {
-        const tarea = await pool.query(
-            'SELECT id_tarea FROM SISTEMA_RIEGO.caso_tarea WHERE id_tarea = $1 AND id_caso = $2',
-            [idTarea, idCaso]
-        );
-        if (!tarea.rows[0]) return null;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const caso = await client.query(`
+            SELECT id_caso FROM SISTEMA_RIEGO.caso_planta
+            WHERE id_caso = $1 AND id_usuario = $2 FOR UPDATE
+        `, [idCaso, idUsuario]);
+        if (!caso.rows[0]) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+        if (idTarea) {
+            const tarea = await client.query(
+                'SELECT id_tarea FROM SISTEMA_RIEGO.caso_tarea WHERE id_tarea = $1 AND id_caso = $2',
+                [idTarea, idCaso]
+            );
+            if (!tarea.rows[0]) {
+                await client.query('ROLLBACK');
+                return null;
+            }
+        }
+        const existente = await client.query(`
+            SELECT * FROM SISTEMA_RIEGO.recordatorio_caso
+            WHERE id_caso = $1 AND id_tarea IS NOT DISTINCT FROM $2
+              AND LOWER(mensaje) = LOWER($3) AND fecha_recordatorio = $4
+              AND activo = TRUE
+            LIMIT 1
+        `, [idCaso, idTarea || null, mensaje, fechaRecordatorio]);
+        if (existente.rows[0]) {
+            await client.query('COMMIT');
+            return existente.rows[0];
+        }
+        const result = await client.query(`
+            INSERT INTO SISTEMA_RIEGO.recordatorio_caso
+                (id_caso, id_tarea, mensaje, fecha_recordatorio)
+            VALUES ($1, $2, $3, $4) RETURNING *
+        `, [idCaso, idTarea || null, mensaje, fechaRecordatorio]);
+        await client.query('COMMIT');
+        return result.rows[0];
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
     }
-    const result = await pool.query(`
-        INSERT INTO SISTEMA_RIEGO.recordatorio_caso
-            (id_caso, id_tarea, mensaje, fecha_recordatorio)
-        VALUES ($1, $2, $3, $4) RETURNING *
-    `, [idCaso, idTarea || null, mensaje, fechaRecordatorio]);
-    return result.rows[0];
+};
+
+const actualizarRecordatorio = async (idUsuario, idCaso, idRecordatorio, mensaje, fechaRecordatorio) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const caso = await client.query(`
+            SELECT id_caso FROM SISTEMA_RIEGO.caso_planta
+            WHERE id_caso = $1 AND id_usuario = $2 FOR UPDATE
+        `, [idCaso, idUsuario]);
+        if (!caso.rows[0]) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+        const existente = await client.query(`
+            SELECT id_recordatorio FROM SISTEMA_RIEGO.recordatorio_caso
+            WHERE id_caso = $1 AND id_recordatorio = $2 AND activo = TRUE
+            FOR UPDATE
+        `, [idCaso, idRecordatorio]);
+        if (!existente.rows[0]) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+        const duplicado = await client.query(`
+            SELECT id_recordatorio FROM SISTEMA_RIEGO.recordatorio_caso
+            WHERE id_caso = $1 AND id_recordatorio <> $2 AND activo = TRUE
+              AND LOWER(mensaje) = LOWER($3) AND fecha_recordatorio = $4
+            LIMIT 1
+        `, [idCaso, idRecordatorio, mensaje, fechaRecordatorio]);
+        if (duplicado.rows[0]) {
+            await client.query('ROLLBACK');
+            return 'recordatorio_duplicado';
+        }
+        const actualizado = await client.query(`
+            UPDATE SISTEMA_RIEGO.recordatorio_caso
+            SET mensaje = $1, fecha_recordatorio = $2
+            WHERE id_recordatorio = $3 AND id_caso = $4 RETURNING *
+        `, [mensaje, fechaRecordatorio, idRecordatorio, idCaso]);
+        await client.query('COMMIT');
+        return actualizado.rows[0] || null;
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
 };
 
 const completarRecordatorio = async (idUsuario, idCaso, idRecordatorio) => {
@@ -295,32 +408,57 @@ const agregarSeguimiento = async (
     idUsuario,
     idCaso,
     nota,
-    imagenUrl
+    imagenUrl,
+    idRecordatorio = null
 ) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const caso = await client.query(`
+            SELECT id_caso
+            FROM SISTEMA_RIEGO.caso_planta
+            WHERE id_caso = $1 AND id_usuario = $2
+            FOR UPDATE
+        `, [idCaso, idUsuario]);
+        if (!caso.rows[0]) {
+            await client.query('ROLLBACK');
+            return null;
+        }
 
-    const caso = await pool.query(`
-        SELECT id_caso
-        FROM SISTEMA_RIEGO.caso_planta
-        WHERE id_caso = $1
-        AND id_usuario = $2
-    `, [idCaso, idUsuario]);
+        if (idRecordatorio != null) {
+            const recordatorio = await client.query(`
+                SELECT id_recordatorio
+                FROM SISTEMA_RIEGO.recordatorio_caso
+                WHERE id_recordatorio = $1 AND id_caso = $2 AND activo = TRUE
+                FOR UPDATE
+            `, [idRecordatorio, idCaso]);
+            if (!recordatorio.rows[0]) {
+                await client.query('ROLLBACK');
+                return 'recordatorio_no_encontrado';
+            }
+        }
 
-    if (!caso.rows[0]) {
-        return null;
+        const result = await client.query(`
+            INSERT INTO SISTEMA_RIEGO.seguimiento_caso
+                (id_caso, nota, imagen_url, id_recordatorio)
+            VALUES ($1, $2, $3, $4)
+            RETURNING *
+        `, [idCaso, nota, imagenUrl || null, idRecordatorio]);
+        if (idRecordatorio != null) {
+            await client.query(`
+                UPDATE SISTEMA_RIEGO.recordatorio_caso
+                SET activo = FALSE
+                WHERE id_recordatorio = $1 AND id_caso = $2
+            `, [idRecordatorio, idCaso]);
+        }
+        await client.query('COMMIT');
+        return result.rows[0];
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
     }
-
-    const result = await pool.query(`
-        INSERT INTO SISTEMA_RIEGO.seguimiento_caso
-        (
-            id_caso,
-            nota,
-            imagen_url
-        )
-        VALUES ($1, $2, $3)
-        RETURNING *
-    `, [idCaso, nota, imagenUrl || null]);
-
-    return result.rows[0];
 };
 
 // ============================================================
@@ -359,6 +497,43 @@ const cambiarEstadoCaso = async (idUsuario, idCaso, estado) => {
     return result.rows[0] || null;
 };
 
+// Cerrar un caso y registrar el resultado en la bitácora de forma atómica.
+const cerrarCasoConResultado = async (idUsuario, idCaso, resultado) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const caso = await client.query(`
+            SELECT id_caso, estado FROM SISTEMA_RIEGO.caso_planta
+            WHERE id_caso = $1 AND id_usuario = $2 FOR UPDATE
+        `, [idCaso, idUsuario]);
+        if (!caso.rows[0]) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+        if (['resuelto', 'abandonado'].includes(caso.rows[0].estado)) {
+            await client.query('ROLLBACK');
+            return 'caso_cerrado';
+        }
+
+        const seguimiento = await client.query(`
+            INSERT INTO SISTEMA_RIEGO.seguimiento_caso (id_caso, nota)
+            VALUES ($1, $2) RETURNING *
+        `, [idCaso, `Resultado final: ${resultado}`]);
+        const actualizado = await client.query(`
+            UPDATE SISTEMA_RIEGO.caso_planta
+            SET estado = 'resuelto', fecha_cierre = CURRENT_TIMESTAMP
+            WHERE id_caso = $1 AND id_usuario = $2 RETURNING *
+        `, [idCaso, idUsuario]);
+        await client.query('COMMIT');
+        return { ...actualizado.rows[0], resultado_final: seguimiento.rows[0] };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
 module.exports = {
     crearCaso,
     obtenerCasos,
@@ -366,11 +541,13 @@ module.exports = {
     obtenerCasoPorId,
     agregarSeguimiento,
     cambiarEstadoCaso,
+    cerrarCasoConResultado,
     obtenerTareas,
     crearTarea,
     actualizarTarea,
     obtenerRecordatorios,
     obtenerRecordatoriosUsuario,
     crearRecordatorio,
+    actualizarRecordatorio,
     completarRecordatorio
 };

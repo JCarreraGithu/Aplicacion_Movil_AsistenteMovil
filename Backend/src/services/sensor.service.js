@@ -36,7 +36,7 @@ const crearSensor = async (
     return result.rows[0];
 };
 
-const obtenerSensoresPorSector = async (idSector) => {
+const obtenerSensoresPorSector = async (idSector, idUsuario) => {
 
     const result = await pool.query(`
         SELECT
@@ -50,9 +50,14 @@ const obtenerSensoresPorSector = async (idSector) => {
         FROM SISTEMA_RIEGO.sensor s
         INNER JOIN SISTEMA_RIEGO.tipo_sensor ts
             ON s.id_tipo_sensor = ts.id_tipo_sensor
+        INNER JOIN SISTEMA_RIEGO.sector sec
+            ON sec.id_sector = s.id_sector
+        INNER JOIN SISTEMA_RIEGO.jardin j
+            ON j.id_jardin = sec.id_jardin
         WHERE s.id_sector = $1
+        AND j.id_usuario = $2
         ORDER BY s.id_sensor
-    `, [idSector]);
+    `, [idSector, idUsuario]);
 
     return result.rows;
 };
