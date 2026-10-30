@@ -59,7 +59,7 @@ app.use('/api/device', rateLimit({
 
 
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.get('/', (req, res) => {
     res.json({
