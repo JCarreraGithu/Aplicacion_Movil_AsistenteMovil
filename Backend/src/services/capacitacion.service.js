@@ -1,5 +1,10 @@
 const crypto = require('crypto');
 const pool = require('../config/database');
+const {
+    normalizarRespuestaActividad: normalizarRespuestaPorTipo,
+    calificarActividad,
+    calificadoresActividad
+} = require('./capacitacion/actividad-calificadores');
 
 class CapacitacionError extends Error {
     constructor(status, message) {
@@ -50,17 +55,39 @@ const huellaActividad = (idRuta, idActividad, respuesta) => crypto
     .update(canonicalizar({ id_ruta: Number(idRuta), id_actividad: Number(idActividad), respuesta }))
     .digest('hex');
 
-const normalizarRespuestaActividad = (respuesta) => {
-    if (typeof respuesta === 'string' && respuesta.trim()) return respuesta.trim();
-    if (Array.isArray(respuesta) && respuesta.length > 0 && respuesta.every((item) => typeof item === 'string' && item.trim())) {
-        return respuesta.map((item) => item.trim());
+const normalizarRespuestaActividad = (respuesta, tipo, contexto = {}) => {
+    const activityType = tipo || (Array.isArray(respuesta) ? 'ordenar_pasos' : 'opcion_multiple');
+    try {
+        return normalizarRespuestaPorTipo(activityType, respuesta, contexto);
+    } catch (error) {
+        throw new CapacitacionError(error.status || 400, error.message);
     }
-    throw new CapacitacionError(400, 'La respuesta de la actividad no es válida');
 };
 
 const obtenerActividadesRuta = async (db, idRuta, idUsuario) => {
+    // Las columnas de extensión todavía pueden faltar. La proyección JSON
+    // conserva la ruta original (orden 1, sin prerrequisito) sin consultar
+    // columnas inexistentes; tras la migración usa los valores persistidos.
     const result = await db.query(`
-        SELECT r.id_ruta, r.slug, r.titulo, r.descripcion,
+        SELECT r.id_ruta,
+               (to_jsonb(r)->>'id_ruta_previa')::int AS id_ruta_previa,
+               COALESCE((to_jsonb(r)->>'orden')::int, 1) AS orden_ruta,
+               r.slug, r.titulo, r.descripcion,
+               ((to_jsonb(r)->>'id_ruta_previa')::int IS NULL OR (
+                   EXISTS (
+                       SELECT 1 FROM SISTEMA_RIEGO.capacitacion_actividad previa
+                       WHERE previa.id_ruta = (to_jsonb(r)->>'id_ruta_previa')::int
+                   ) AND NOT EXISTS (
+                       SELECT 1
+                       FROM SISTEMA_RIEGO.capacitacion_actividad previa
+                       LEFT JOIN SISTEMA_RIEGO.capacitacion_actividad_progreso pp
+                         ON pp.id_ruta = previa.id_ruta
+                        AND pp.id_actividad = previa.id_actividad
+                        AND pp.id_usuario = $2
+                       WHERE previa.id_ruta = (to_jsonb(r)->>'id_ruta_previa')::int
+                         AND COALESCE(pp.completada, FALSE) = FALSE
+                   )
+               )) AS disponible,
                v.numero_version, l.id_leccion, l.id_modulo,
                jsonb_agg(jsonb_build_object(
                    'id_actividad', a.id_actividad,
@@ -70,6 +97,7 @@ const obtenerActividadesRuta = async (db, idRuta, idUsuario) => {
                    'enunciado', a.enunciado,
                    'icono', a.icono,
                    'opciones', a.opciones,
+                   'configuracion', COALESCE(to_jsonb(a)->'configuracion', '{}'::jsonb),
                    'xp', a.xp,
                    'completada', COALESCE(p.completada, FALSE),
                    'intentos', COALESCE(p.intentos, 0)
@@ -87,9 +115,26 @@ const obtenerActividadesRuta = async (db, idRuta, idUsuario) => {
          AND p.id_usuario = $2
         WHERE r.id_ruta = $1 AND r.estado = 'publicada'
           AND v.estado = 'publicada' AND m.publicado = TRUE
-        GROUP BY r.id_ruta, v.numero_version, l.id_leccion, l.id_modulo
+        GROUP BY r.id_ruta, (to_jsonb(r)->>'id_ruta_previa')::int,
+                 COALESCE((to_jsonb(r)->>'orden')::int, 1),
+                 v.numero_version, l.id_leccion, l.id_modulo
     `, [idRuta, idUsuario]);
-    return result.rows[0] || null;
+    const route = result.rows[0];
+    if (!route) return null;
+
+    // La API, no Flutter, confirma cuál es el siguiente desafío disponible.
+    // Solo el primer desafío no completado se desbloquea cuando todos los
+    // anteriores tienen progreso completado.
+    const rutaDisponible = route.disponible !== false;
+    let pendientesAnteriores = false;
+    route.actividades = (route.actividades || []).map((actividad) => {
+        const completada = actividad.completada === true;
+        const disponible = rutaDisponible && !completada && !pendientesAnteriores;
+        if (!completada) pendientesAnteriores = true;
+        return { ...actividad, disponible };
+    });
+    route.disponible = rutaDisponible;
+    return route;
 };
 
 const resultadoIntento = async (db, idIntento) => {
@@ -221,13 +266,8 @@ const createCapacitacionService = (db = pool) => ({
             JOIN SISTEMA_RIEGO.capacitacion_modulo m ON m.id_modulo = l.id_modulo
             WHERE l.id_modulo = $1 AND m.publicado = TRUE
               AND v.estado = 'publicada' AND r.estado = 'publicada'
-              AND v.id_leccion_version = (
-                  SELECT v2.id_leccion_version
-                  FROM SISTEMA_RIEGO.capacitacion_leccion_version v2
-                  WHERE v2.id_leccion = l.id_leccion AND v2.estado = 'publicada'
-                  ORDER BY v2.numero_version DESC LIMIT 1
-              )
-            ORDER BY l.orden, r.id_ruta
+            ORDER BY l.orden, v.numero_version,
+                     COALESCE((to_jsonb(r)->>'orden')::int, 1), r.id_ruta
         `, [idModulo]);
         const routes = [];
         for (const row of result.rows) {
@@ -245,8 +285,6 @@ const createCapacitacionService = (db = pool) => ({
         if (typeof idempotencyKey !== 'string' || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
             throw new CapacitacionError(400, 'Envíe un encabezado Idempotency-Key de 8 a 128 caracteres');
         }
-        const answer = normalizarRespuestaActividad(rawAnswer);
-        const hash = huellaActividad(idRuta, idActividad, answer);
         const client = await db.connect();
         try {
             await client.query('BEGIN');
@@ -262,7 +300,8 @@ const createCapacitacionService = (db = pool) => ({
                 [943712, `${idUsuario}:${idempotencyKey}`]
             );
             const routeResult = await client.query(`
-                SELECT r.id_ruta
+                SELECT r.id_ruta,
+                       (to_jsonb(r)->>'id_ruta_previa')::int AS id_ruta_previa
                 FROM SISTEMA_RIEGO.capacitacion_ruta r
                 JOIN SISTEMA_RIEGO.capacitacion_leccion_version v ON v.id_leccion_version = r.id_leccion_version
                 JOIN SISTEMA_RIEGO.capacitacion_leccion l ON l.id_leccion = v.id_leccion
@@ -273,12 +312,33 @@ const createCapacitacionService = (db = pool) => ({
             if (!routeResult.rows[0]) throw new CapacitacionError(404, 'Ruta publicada no encontrada');
 
             const activityResult = await client.query(`
-                SELECT id_actividad, id_ruta, orden, xp, respuesta_correcta, explicacion
+                SELECT id_actividad, id_ruta, orden, xp, respuesta_correcta, explicacion, tipo,
+                       opciones,
+                       to_jsonb(capacitacion_actividad)->'configuracion' AS configuracion
                 FROM SISTEMA_RIEGO.capacitacion_actividad
                 WHERE id_ruta = $1 AND id_actividad = $2
             `, [idRuta, idActividad]);
             const activity = activityResult.rows[0];
             if (!activity) throw new CapacitacionError(404, 'Actividad no encontrada');
+
+            const evaluatorContext = {
+                opciones: activity.opciones,
+                configuracion: activity.configuracion
+            };
+            const answer = normalizarRespuestaActividad(rawAnswer, activity.tipo, evaluatorContext);
+            const hash = huellaActividad(idRuta, idActividad, answer);
+            const evaluation = calificarActividad(
+                activity.tipo, answer, activity.respuesta_correcta,
+                activity.configuracion, activity.opciones
+            );
+            const detalleSimulacion = evaluation.resultado_simulacion ? {
+                resultado_simulacion: evaluation.resultado_simulacion,
+                explicacion: `${evaluation.explicacion} ${activity.explicacion}`
+            } : {};
+            const detalleMinijuego = evaluation.resultado_juego ? {
+                resultado_juego: evaluation.resultado_juego,
+                explicacion: evaluation.explicacion || activity.explicacion
+            } : {};
 
             const prior = await client.query(`
                 SELECT id_intento, id_ruta, id_actividad, huella_solicitud,
@@ -303,8 +363,29 @@ const createCapacitacionService = (db = pool) => ({
                     respuesta: old.respuesta_usuario, correcta: old.correcta,
                     respuesta_correcta: activity.respuesta_correcta,
                     explicacion: activity.explicacion, xp_otorgado: old.xp_otorgado,
-                    xp_total: xp.rows[0].xp_total, repetido: true
+                    xp_total: xp.rows[0].xp_total, repetido: true,
+                    ...detalleSimulacion,
+                    ...detalleMinijuego
                 };
+            }
+
+            const routePrerequisite = routeResult.rows[0].id_ruta_previa;
+            if (routePrerequisite !== null && routePrerequisite !== undefined) {
+                const previousRoute = await client.query(`
+                    SELECT COUNT(a.id_actividad)::int AS total,
+                           COUNT(a.id_actividad) FILTER (
+                               WHERE COALESCE(p.completada, FALSE) = FALSE
+                           )::int AS pendientes
+                    FROM SISTEMA_RIEGO.capacitacion_actividad a
+                    LEFT JOIN SISTEMA_RIEGO.capacitacion_actividad_progreso p
+                      ON p.id_ruta = a.id_ruta AND p.id_actividad = a.id_actividad
+                     AND p.id_usuario = $2
+                    WHERE a.id_ruta = $1
+                `, [routePrerequisite, idUsuario]);
+                if (Number(previousRoute.rows[0]?.total || 0) === 0
+                    || Number(previousRoute.rows[0]?.pendientes || 0) > 0) {
+                    throw new CapacitacionError(409, 'Completa la ruta anterior para desbloquear estos minijuegos');
+                }
             }
 
             const previous = await client.query(`
@@ -319,7 +400,7 @@ const createCapacitacionService = (db = pool) => ({
                 throw new CapacitacionError(409, 'Completa los desafíos anteriores para continuar');
             }
 
-            const correct = canonicalizar(answer) === canonicalizar(activity.respuesta_correcta);
+            const correct = evaluation.correcta;
             const current = await client.query(`
                 SELECT completada FROM SISTEMA_RIEGO.capacitacion_actividad_progreso
                 WHERE id_usuario = $1 AND id_actividad = $2 FOR UPDATE
@@ -356,7 +437,9 @@ const createCapacitacionService = (db = pool) => ({
                 respuesta_correcta: activity.respuesta_correcta,
                 explicacion: activity.explicacion,
                 xp_otorgado: reward, xp_total: xp.rows[0].xp_total,
-                repetido: false
+                repetido: false,
+                ...detalleSimulacion,
+                ...detalleMinijuego
             };
         } catch (error) {
             await client.query('ROLLBACK');
@@ -541,5 +624,7 @@ module.exports = {
     normalizarRespuestas,
     huellaIntento,
     normalizarRespuestaActividad,
-    huellaActividad
+    huellaActividad,
+    calificadoresActividad,
+    calificarActividad
 };
