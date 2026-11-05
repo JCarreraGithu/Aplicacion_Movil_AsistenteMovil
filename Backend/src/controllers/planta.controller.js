@@ -85,6 +85,20 @@ const obtenerPlantaPorId = async (req, res) => {
 };
 
 module.exports = {
+    archivarPlanta: async (req, res) => {
+        const sector = Number(req.params.idSector), planta = Number(req.params.idPlanta);
+        if (!Number.isSafeInteger(sector) || sector < 1 || !Number.isSafeInteger(planta) || planta < 1) {
+            return res.status(400).json({mensaje: 'Identificador inválido'});
+        }
+        try {
+            const result = await plantaService.archivarPlanta(req.usuario.id_usuario, sector, planta);
+            if (!result) return res.status(404).json({mensaje: 'Planta no encontrada'});
+            return res.status(200).json({mensaje: 'Planta archivada. Se conserva su historial.'});
+        } catch (error) {
+            console.error(error);
+            return res.status(error.code === '42703' ? 503 : 500).json({mensaje: error.code === '42703' ? 'El archivado requiere aplicar la migración pendiente.' : 'No se pudo archivar la planta'});
+        }
+    },
     crearPlanta,
     obtenerPlantas,
     obtenerPlantaPorId

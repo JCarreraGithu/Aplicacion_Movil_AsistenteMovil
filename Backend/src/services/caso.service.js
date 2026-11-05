@@ -491,6 +491,7 @@ const cambiarEstadoCaso = async (idUsuario, idCaso, estado) => {
             END
         WHERE id_caso = $3
         AND id_usuario = $4
+        AND estado NOT IN ('resuelto', 'abandonado')
         RETURNING *
     `, [estado, cierraCaso, idCaso, idUsuario]);
 

@@ -11,6 +11,7 @@ const verificarToken = require('../middlewares/auth.middleware');
 const router = express.Router();
 
 router.use(verificarToken);
+router.delete('/:idSector/plantas/:idPlanta', require('../controllers/planta.controller').archivarPlanta);
 
 router.post(
     '/:idSector/plantas',

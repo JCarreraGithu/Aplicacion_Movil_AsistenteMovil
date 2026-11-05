@@ -47,6 +47,7 @@ app.use(
     identificacionRoutes
 );
 app.use('/api/ia', consultaIaRoutes);
+app.use('/api/ia/conversaciones', require('./routes/conversacion.routes'));
 app.use('/api/casos', casoRoutes);
 app.use('/api/capacitacion', capacitacionRoutes);
 app.use('/api/device', rateLimit({

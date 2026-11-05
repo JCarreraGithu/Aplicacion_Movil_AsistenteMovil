@@ -98,6 +98,7 @@ const obtenerPlantas = async (idUsuario, idSector) => {
             LIMIT 1
         ) hp ON TRUE
         WHERE p.id_sector = $1
+          AND (to_jsonb(p)->>'fecha_eliminacion') IS NULL
         ORDER BY p.id_planta
     `, [idSector]);
 
@@ -153,6 +154,16 @@ const obtenerPlantaPorId = async (
 };
 
 module.exports = {
+    archivarPlanta: async (idUsuario, idSector, idPlanta) => {
+        const result = await pool.query(`
+          UPDATE SISTEMA_RIEGO.planta p SET fecha_eliminacion = COALESCE(p.fecha_eliminacion, NOW())
+          FROM SISTEMA_RIEGO.sector s JOIN SISTEMA_RIEGO.jardin j ON j.id_jardin = s.id_jardin
+          WHERE p.id_sector = s.id_sector AND p.id_sector = $1
+            AND p.id_planta = $2 AND j.id_usuario = $3
+          RETURNING p.id_planta
+        `, [idSector, idPlanta, idUsuario]);
+        return result.rows[0] ?? null;
+    },
     crearPlanta,
     obtenerPlantas,
     obtenerPlantaPorId
